@@ -1,0 +1,10 @@
+# Optional heavy NLP models (used when runtime.use_heavy_models is auto/true)
+llmlingua
+spacy>=3.7
+keybert
+sentence-transformers
+langchain-huggingface
+transformers
+torch
+codecarbon
+# after install: python -m spacy download en_core_web_sm

@@ -1,0 +1,55 @@
+# Domain vocabulary for keyword extraction (plan §8.2).
+machine_prefixes: [cnc, vmc, hmc, lathe, press, mill, grinder, robot, edm]
+
+components: [spindle, spindle bearing, bearing, coolant pump, coolant, servo motor, motor,
+             ball screw, belt, drive belt, gearbox, chuck, coupling, fixture, lubrication unit,
+             hydraulic pump, sensor, vibration sensor, tool, encoder]
+symptoms: [vibration, overheating, temperature, noise, chatter, leakage, misalignment, wear,
+           tool breakage, current, speed fluctuation, pressure, imbalance]
+maintenance: [replaced, replacement, service, interval, overdue, lubrication, calibration,
+              inspection, alignment, refill, oil level]
+logistics: [delay, delivery, supplier, spare part]
+
+# Surface forms mapped to a vocabulary entry (after lowercasing).
+aliases:
+  vibrating: vibration
+  vibrates: vibration
+  vibrate: vibration
+  shaking: vibration
+  overheat: overheating
+  overheated: overheating
+  hot: overheating
+  running hot: overheating
+  noisy: noise
+  leaking: leakage
+  leak: leakage
+  misaligned: misalignment
+  worn: wear
+  unbalanced: imbalance
+  delayed: delay
+  late delivery: delay
+  bearings: bearing
+  temp: temperature
+  amps: current
+  lube: lubrication
+  calibrated: calibration
+  replace: replaced
+
+# Query expansion in R1: a matched term also seeds its related terms (weight 0.7).
+related:
+  overheating: [temperature]
+  temperature: [overheating]
+  speed fluctuation: [speed]
+  vibration: [vibration sensor]
+
+# Word pairs that signal contradiction for the heuristic NLI fallback.
+antonyms:
+  - [normal, above]
+  - [normal, high]
+  - [normal, abnormal]
+  - [ok, fault]
+  - [within, above]
+  - [within, exceeds]
+  - [increased, decreased]
+  - [working, failed]
+  - [present, missing]

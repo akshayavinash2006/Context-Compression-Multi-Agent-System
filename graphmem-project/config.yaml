@@ -1,0 +1,149 @@
+# All hyperparameters (plan §6). Tune on dev scenarios only; freeze before test runs.
+seed: 42
+
+runtime:
+  use_heavy_models: auto           # auto | true | false  (false = light fallbacks, plan §4)
+  checkpoint_db: results/checkpoints.sqlite
+  llm_cache: results/llm_cache.sqlite   # null to disable; never used with the mock preset
+
+clock:
+  unit: turn                       # logical time; 1 agent message = 1 turn
+
+compression:                       # W1
+  model: microsoft/llmlingua-2-xlm-roberta-large-meetingbank
+  model_small: microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank
+  use_small_model: false           # true on CPU-only laptops
+  rate: 0.5                        # keep ~50% of tokens (1.0 = no compression)
+  min_tokens_to_compress: 25       # shorter texts are stored as-is
+  force_tokens: ["not", "no", "never", "none", "without", "before", "after",
+                 "above", "below", "%", "\n"]
+  force_reserve_digit: true
+  safety_check: true
+  fallback_rate_step: 0.2
+
+keywords:                          # W2
+  spacy_model: en_core_web_sm
+  ner_labels: [ORG, PRODUCT, FAC, GPE, PERSON, EVENT, LAW]
+  keybert_top_n: 5
+  keybert_ngram: [1, 2]
+  keybert_use_mmr: true
+  keybert_diversity: 0.5
+  use_yake_fallback: true
+  phrase_top_n: 3                  # free key phrases kept per memory (KeyBERT/YAKE)
+  max_keywords_per_memory: 8
+  vocabulary: domain/vocabulary.yaml
+
+resolution:                        # W2 keyword matching
+  fuzzy_threshold: 90              # RapidFuzz ratio 0-100
+  embed_threshold: 0.85            # cosine
+  digit_guard: true
+
+embeddings:
+  model: sentence-transformers/all-MiniLM-L6-v2
+  normalize: true
+  hash_dim: 512                    # light fallback embedding size
+
+merge:                             # W3
+  enabled: true                    # false = always CREATE (ablation)
+  candidate_min_shared_keywords: 1
+  jaccard_skip_below: 0.3
+  jaccard_merge: 0.6
+  cosine_merge: 0.90
+  cosine_update: 0.80
+  nli_model: cross-encoder/nli-deberta-v3-base
+  nli_model_small: cross-encoder/nli-deberta-v3-xsmall
+  use_small_nli: false
+  nli_contradiction_update: 0.70
+  nli_contradiction_block_merge: 0.50
+  merge_strength_boost: 0.2
+  top_candidates_nli: 3
+  # Weighted Jaccard uses domain keywords (IDs, vocabulary, NER) when a memory has any;
+  # free key phrases vary with wording and would block merging of paraphrases.
+  jaccard_kinds: [machine, po, component, symptom, maintenance, logistics, entity]
+
+notify:                            # W4
+  enabled: true
+  profile_match_threshold: 0.25
+  profile_learning: true
+  profile_learning_weight: 0.1
+  profile_max_size: 40
+
+retrieval:                         # R1-R3
+  ranker: ppr                      # ppr | keyword_count (ablation "no PPR")
+  use_strength: true               # false = score is PPR only (ablation)
+  ppr_alpha: 0.85
+  seed_weight_query: 1.0
+  seed_weight_profile: 0.2
+  seed_weight_inbox: 0.5
+  ego_radius: 4
+  fallback_embed_top_k: 3
+  fallback_embed_min_cos: 0.60
+  vector_fallback_top_k: 10
+  mmr_lambda: 0.7
+  mmr_pool: 50
+  token_budget_default: 300
+  skip_already_read: true
+  skip_read_window: 3              # turns; agents are stateless, so skip only recent re-sends (null = forever)
+  include_superseded: false
+
+strength:
+  initial: 1.0
+  read_boost: 0.1
+  max: 2.0
+  decay_lambda: 0.02               # per turn (tuned on dev: 0.05 -> 0.02)
+  archive_below: 0.10
+
+maintenance:
+  every_n_turns: 10
+  keyword_merge_cosine: 0.92
+
+# Thresholds used instead of the ones above when the light hashed-n-gram embeddings
+# are active (their cosine scale differs from MiniLM's).
+hash_embedding_overrides:
+  resolution.embed_threshold: 0.93
+  merge.cosine_merge: 0.55
+  merge.cosine_update: 0.60
+  retrieval.fallback_embed_min_cos: 0.70
+  maintenance.keyword_merge_cosine: 0.97
+
+agents:
+  preset: mock                     # mock | single_provider | multi_provider  (plan §13.7)
+  temperature: 0.0
+  num_ctx: 8192
+  max_expand_per_turn: 1
+  token_counter: tiktoken:cl100k_base
+  mock:
+    expand_policy: short           # never | short | always
+  presets:
+    mock:
+      default: {provider: mock, model: rule-based}
+    single_provider:
+      default: {provider: ollama, model: "qwen2.5:7b"}
+    multi_provider:
+      sensor:     {provider: ollama, model: "qwen2.5:3b"}
+      history:    {provider: ollama, model: "qwen2.5:7b"}
+      diagnosis:  {provider: groq, model: llama-3.3-70b-versatile}
+      report:     {provider: google_genai, model: gemini-2.0-flash}
+      summariser: {provider: ollama, model: "qwen2.5:3b"}
+      default:    {provider: ollama, model: "qwen2.5:7b"}
+  fallbacks:
+    - {provider: ollama, model: "qwen2.5:7b"}
+    - {provider: mock, model: rule-based}
+  rate_limits:                     # requests / second (0 = unlimited)
+    groq: 0.5
+    google_genai: 0.25
+    openrouter: 0.3
+    ollama: 0
+    mock: 0
+  ollama_base_url: http://localhost:11434
+  openrouter_base_url: https://openrouter.ai/api/v1
+
+experiment:
+  mode: replay                     # replay | live
+  seeds: [42, 43, 44]
+  sliding_window_n: 10
+  rolling_summary_every: 8
+  vector_rag_top_k: 8
+
+demo:
+  interrupt_before_report: false

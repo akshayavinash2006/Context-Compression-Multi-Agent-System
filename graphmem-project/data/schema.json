@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Factory diagnosis scenario",
+  "type": "object",
+  "required": ["scenario_id", "machines", "events"],
+  "properties": {
+    "scenario_id": {"type": "string"},
+    "split": {"type": "string"},
+    "machines": {"type": "array", "items": {"type": "string", "pattern": "^[a-z]+-\\d+$"}},
+    "injected_error": {
+      "type": ["object", "null"],
+      "properties": {"event_id": {"type": "string"}, "description": {"type": "string"},
+                     "wrong_cause": {"type": "string"}}
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "turn", "type", "source_agent", "text"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^E\\d{3}$"},
+          "turn": {"type": "integer", "minimum": 1},
+          "type": {"enum": ["spec", "sensor_reading", "maintenance", "operator_note", "question"]},
+          "source_agent": {"enum": ["sensor", "history", "user"]},
+          "text": {"type": "string"},
+          "entities": {"type": "array", "items": {"type": "string"}},
+          "needed_by": {"type": "array", "items": {"enum": ["sensor", "history", "diagnosis", "report"]}},
+          "duplicate_of": {"type": ["string", "null"]},
+          "corrects": {"type": ["string", "null"]},
+          "hops": {"type": "integer"},
+          "gold": {
+            "type": "object",
+            "required": ["machine", "root_cause", "action", "supporting_events"],
+            "properties": {
+              "machine": {"type": "string"},
+              "root_cause": {"enum": ["bearing_wear", "misalignment", "imbalance", "coolant_failure", "overload",
+                                      "lubrication_failure", "sensor_fault", "belt_wear", "none"]},
+              "action": {"type": "string"},
+              "supporting_events": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    }
+  }
+}

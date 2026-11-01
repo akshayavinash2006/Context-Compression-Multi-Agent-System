@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+results/
+.pytest_cache/
+data/scenarios/
