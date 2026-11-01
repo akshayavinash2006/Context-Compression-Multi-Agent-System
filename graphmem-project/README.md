@@ -49,6 +49,24 @@ model in the fallback chain is used (Ollama, then mock).
 Heavy NLP models are used automatically when installed (`runtime.use_heavy_models: auto`);
 otherwise light fallbacks are used: rule compressor, hashed embeddings, heuristic NLI, YAKE.
 
+### Agent context compression
+
+Before building each agent prompt, retrieved context and explicit Diagnosis-to-Report
+handoffs pass through `graphmem.context_compression.ContextCompressor`. The default
+`compression.context_ratio: 0.30` is a final budget relative to the rendered context
+and uses the configured shared tokenizer (`agents.token_counter`). Sentence and code
+units are scored against the receiving task; unselected units are compacted with the
+existing rule compressor when they fit. Per-turn `turns` metadata records input/output
+tokens, ratio, heuristic retention, latency, and any warning. No extra model call or
+provider is introduced. This metric checks preservation of detected entities,
+numbers, negations, and constraint/cause markers; it is not a semantic guarantee.
+The original messages remain in SQLite cold storage and can be retrieved with the
+delivered memory IDs via `expand_memory` / `GraphMemory.expand()`.
+
+Tune `compression.context_ratio`, `compression.context_max_iterations`, and the
+five `compression.context_weights` in `config.yaml`. The compressor reports when
+the budget cannot safely be met. It does not claim lossless compression.
+
 ## Commands
 
 ```powershell
