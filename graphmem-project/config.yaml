@@ -122,13 +122,13 @@ agents:
     multi_provider:
       sensor:     {provider: ollama, model: "qwen2.5:3b"}
       history:    {provider: ollama, model: "qwen2.5:7b"}
-      diagnosis:  {provider: groq, model: llama-3.3-70b-versatile}
-      report:     {provider: google_genai, model: gemini-2.0-flash}
+      diagnosis:  {provider: groq, model: openai/gpt-oss-20b}             # small/cheap for testing (bigger: openai/gpt-oss-120b)
+      report:     {provider: google_genai, model: gemini-3.5-flash-lite}  # small/cheap for testing (bigger: gemini-3.8-flash)
       summariser: {provider: ollama, model: "qwen2.5:3b"}
       default:    {provider: ollama, model: "qwen2.5:7b"}
-  fallbacks:
+  fallbacks:                       # real models only; a role with no working model fails loudly
     - {provider: ollama, model: "qwen2.5:7b"}
-    - {provider: mock, model: rule-based}
+  allow_mock_fallback: false       # true = old behaviour (mock answers can mix into real runs)
   rate_limits:                     # requests / second (0 = unlimited)
     groq: 0.5
     google_genai: 0.25

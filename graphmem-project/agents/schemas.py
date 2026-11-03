@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from graphmem.models import normalize_machine
+
 RootCause = Literal["bearing_wear", "misalignment", "imbalance", "coolant_failure", "overload",
                     "lubrication_failure", "sensor_fault", "belt_wear", "none"]
 
@@ -31,7 +33,7 @@ def parse_report_text(text: str) -> ReportSchema | None:
         return None
     rc = str(data.get("root_cause", "none")).strip().lower().replace(" ", "_")
     data["root_cause"] = rc if rc in RootCause.__args__ else "none"
-    data["machine"] = str(data.get("machine", "")).lower().replace(" ", "-")
+    data["machine"] = normalize_machine(data.get("machine", ""))
     data["evidence"] = [str(e).strip("[]") for e in data.get("evidence", []) or []]
     data["action"] = str(data.get("action", ""))
     try:

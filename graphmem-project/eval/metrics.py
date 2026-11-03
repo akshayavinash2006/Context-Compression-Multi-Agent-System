@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from graphmem.models import normalize_machine
+
 KEY = ["condition", "scenario", "seed"]
 
 
@@ -50,7 +52,7 @@ def run_metrics(key: tuple, calls, answers, turns, decisions, stats, runs, scena
     for a in answers:
         rep, gold = a.get("report") or {}, a.get("gold") or {}
         ok_rc = rep.get("root_cause") == gold.get("root_cause")
-        ok = ok_rc and rep.get("machine") == gold.get("machine")
+        ok = ok_rc and normalize_machine(rep.get("machine")) == normalize_machine(gold.get("machine"))
         acc.append(ok)
         rc_acc.append(ok_rc)
         act.append(action_score(rep.get("action", ""), gold.get("action", "")))

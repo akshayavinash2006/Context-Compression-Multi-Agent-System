@@ -35,6 +35,26 @@ ROLES = {
     },
 }
 
+def role_for(agent: str, zones: dict | None = None) -> dict:
+    """Role of any agent: the four core roles, or a zone monitoring agent (car plant)."""
+    if agent in ROLES:
+        return ROLES[agent]
+    z = (zones or {}).get(agent, {})
+    name = z.get("name", agent.title())
+    return {
+        "role": f"{name} monitoring",
+        "description": f"You monitor the {name} ({z.get('description', 'a production zone')}). You read its "
+                       "machine sensor data and operator notes and report anomalies with exact values, "
+                       "units, limits and times.",
+        "profile": ROLES["sensor"]["profile"] + list(z.get("machines", [])),
+    }
+
+
+def task_kind(agent: str) -> str:
+    """Which task template an agent uses: zone agents behave like the Sensor agent."""
+    return agent if agent in ("history", "diagnosis", "report") else "sensor"
+
+
 SYSTEM = (
     "You are the {role} agent in a factory maintenance team. {role_description}\n"
     "Use only the facts in MEMORY. Each fact starts with an ID like [M12].\n"

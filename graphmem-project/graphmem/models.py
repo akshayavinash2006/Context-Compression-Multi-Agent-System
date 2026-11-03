@@ -1,6 +1,7 @@
 """Shared dataclasses (plan §7, §9.3)."""
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 
 
@@ -46,6 +47,16 @@ ACTIONS = {
     "belt_wear": "replace drive belt",
     "none": "no action needed",
 }
+
+
+_MACHINE_RE = re.compile(r"\b([a-z]{2,6})[\s\-_]?(\d{1,4})\b", re.I)
+
+
+def normalize_machine(s) -> str:
+    """'CNC-3', 'CNC 3', 'cnc3', 'Machine CNC_3' -> 'cnc-3' (same form as the answer key)."""
+    text = str(s or "").strip()
+    m = _MACHINE_RE.search(text)
+    return f"{m.group(1).lower()}-{int(m.group(2))}" if m else text.lower()
 
 
 def format_memory_line(mid: str, agent: str, turn: int, text: str) -> str:

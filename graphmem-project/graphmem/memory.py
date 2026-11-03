@@ -79,10 +79,21 @@ class GraphMemory:
         self.counters: Counter = Counter()
         self.decisions: list[dict] = []
         self.deliveries: list[dict] = []
+        self.listener = None          # optional callable(kind, payload): live UI events
         self._next_id = 1
         self._write_graph = build_write_graph(self)
         self._read_graph = build_read_graph(self)
         self._maintain_graph = build_maintain_graph(self)
+
+    def emit(self, kind: str, payload: dict) -> None:
+        if self.listener is not None:
+            try:
+                self.listener(kind, payload)
+            except Exception:       # the UI must never break a run
+                pass
+
+    def keywords_text(self, mid: str) -> list[str]:
+        return [self.store.g.nodes[k]["canonical"] for k in self.store.keywords_of(mid)]
 
     # ---------- helpers used by graph nodes ----------
     def embed(self, text: str) -> np.ndarray:
@@ -174,8 +185,10 @@ class GraphMemory:
     # ---------- housekeeping ----------
     def maintain(self) -> dict:
         out = self._maintain_graph.invoke({})
-        return {"archived": out["archived"], "keywords_merged": out["keywords_merged"],
-                "keywords_removed": out["keywords_removed"], **out["stats"]}
+        res = {"archived": out["archived"], "keywords_merged": out["keywords_merged"],
+               "keywords_removed": out["keywords_removed"], **out["stats"]}
+        self.emit("maintain", res)
+        return res
 
     def tick(self) -> int:
         return self.clock.tick()

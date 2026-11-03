@@ -17,6 +17,21 @@ class CallLogger(BaseCallbackHandler):
         self.context: dict = {}         # turn, agent (set by the agent runner)
         self.records: list[dict] = []
         self._pending: dict = {}
+        self.listener = None          # optional callable(kind, payload): live UI events
+
+    def _emit(self, rec: dict):
+        if self.listener is not None:
+            try:
+                self.listener("llm", rec)
+            except Exception:
+                pass
+
+    def on_chat_model_start_notify(self, rec: dict):
+        if self.listener is not None:
+            try:
+                self.listener("llm_start", rec)
+            except Exception:
+                pass
 
     def set_context(self, **ctx):
         self.context = ctx
@@ -31,6 +46,9 @@ class CallLogger(BaseCallbackHandler):
             "model": (metadata or {}).get("model") or (metadata or {}).get("ls_model_name"),
             "fallback_index": (metadata or {}).get("fallback_index", 0),
         }
+        p = self._pending[run_id]
+        self.on_chat_model_start_notify({**self.static, **self.context, "provider": p["provider"],
+                                         "model": p["model"], "input_tokens": p["input_tokens"]})
 
     def on_llm_end(self, response, *, run_id, **kwargs):
         p = self._pending.pop(run_id, None)
@@ -56,6 +74,7 @@ class CallLogger(BaseCallbackHandler):
             "tool_calls": n_tool_calls,
             "error": None,
         })
+        self._emit(self.records[-1])
 
     def on_llm_error(self, error, *, run_id, **kwargs):
         p = self._pending.pop(run_id, None)
@@ -66,6 +85,7 @@ class CallLogger(BaseCallbackHandler):
                              "provider_input_tokens": None, "output_tokens": 0,
                              "latency_s": round(time.perf_counter() - p["t0"], 4), "tool_calls": 0,
                              "error": f"{type(error).__name__}: {str(error)[:200]}"})
+        self._emit(self.records[-1])
 
     # ---------- helpers ----------
     def mark(self) -> int:

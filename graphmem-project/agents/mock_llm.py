@@ -19,7 +19,8 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from graphmem.models import ACTIONS, ROOT_CAUSES
 from graphmem.tokens import TokenCounter
 
-MACHINE = re.compile(r"\b(cnc|vmc|hmc|lathe|press|mill|grinder|robot|edm)[\s\-]?(\d{1,4})\b(?![.:]\d)", re.I)
+MACHINE = re.compile(r"\b(cnc|vmc|hmc|lathe|press|mill|grinder|robot|edm|prs|rob|pnt|asm|agv|qc)"
+                     r"[\s\-‑]?(\d{1,4})\b(?![.:]\d)", re.I)
 LINE = re.compile(r"^\[(M\d+)(?: original)? \| ([^|\]]+) \| t=(\d+)\]\s*(.*)$")
 
 CAUSE_CUES = {

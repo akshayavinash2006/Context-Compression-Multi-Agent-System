@@ -67,6 +67,24 @@ Each experiment directory gets `calls.jsonl`, `answers.jsonl`, `traces.jsonl`,
 `memory_stats.jsonl`, `decisions.jsonl`, `per_run.csv`, `summary.csv`, `stats.csv`
 (Wilcoxon vs graph) and `plots/`.
 
+## 3D factory UI
+
+A car plant where every zone (Press, Body, Paint, Powertrain, Final Assembly, Quality) has its
+own monitoring agent, plus Maintenance (History), Control Room (Diagnosis) and Reports. The
+real pipeline runs on the server and streams every memory write, read and LLM call to the UI.
+
+```powershell
+python -m data.automotive --n 10          # car-plant scenarios -> data/scenarios/plant
+python scripts/fetch_models.py            # KayKit 3D models (CC0) -> ui/public/models
+cd ui; npm install; npm run build; cd ..  # build the UI once
+python -m server                          # open http://127.0.0.1:8000
+```
+
+While editing the UI, run `python -m server` and `cd ui; npm run dev` (http://localhost:5173, hot reload).
+Demo link that starts a run straight away: `http://127.0.0.1:8000/?autostart=P001&preset=mock&delay=0.5`.
+
+3D models: KayKit Space Base Bits and City Builder Bits by Kay Lousberg, CC0.
+
 ## Layout
 
 ```
@@ -77,5 +95,8 @@ baselines/  full history, sliding window, rolling summary, vector RAG
 data/       simulator, paraphraser, schema
 eval/       experiment harness, metrics, statistics, plots
 viz/        pyvis trace view
+server/     FastAPI + WebSocket live server for the UI
+ui/         React + three.js 3D factory UI
+scripts/    fetch_models.py (downloads the 3D models)
 tests/      pytest suite (plan §20)
 ```

@@ -23,6 +23,14 @@ class MemoryBackend:
         self.counters: Counter = Counter()
         self.decisions: list[dict] = []
         self.deliveries: list[dict] = []
+        self.listener = None          # optional callable(kind, payload): live UI events
+
+    def emit(self, kind: str, payload: dict) -> None:
+        if self.listener is not None:
+            try:
+                self.listener(kind, payload)
+            except Exception:
+                pass
 
     # ---------- interface ----------
     def register_agent(self, name: str, role: str, profile_keywords: list[str]) -> None:
@@ -39,6 +47,12 @@ class MemoryBackend:
         self.counters["writes"] += 1
         self.counters["orig_tokens_written"] += msg["tokens"]
         self.on_write(msg)
+        self.emit("write", {"turn": msg["turn"], "agent": agent, "event_id": event_id, "decision": "append",
+                            "memory_id": mid, "target": None, "superseded": None, "notified": [],
+                            "text": text, "original": text, "kind": msg["kind"], "tokens": msg["tokens"],
+                            "orig_tokens": msg["tokens"], "keywords": [], "derived_from": msg["derived_from"],
+                            "n_writers": 1, "stats": self.stats(),
+                            "orig_tokens_total": self.counters["orig_tokens_written"]})
         return mid
 
     def on_write(self, msg: dict) -> None:
@@ -52,8 +66,14 @@ class MemoryBackend:
         lines = [self.line(m) for m in msgs]
         text = "\n".join(([prefix] if prefix else []) + lines)
         self.counters["reads"] += 1
-        return ReadResult(memory_ids=[m["id"] for m in msgs], context_text=text,
-                          tokens_used=self.count_tokens(text), scores={})
+        res = ReadResult(memory_ids=[m["id"] for m in msgs], context_text=text,
+                         tokens_used=self.count_tokens(text), scores={})
+        if record:
+            self.emit("read", {"turn": self.clock.now, "agent": agent, "query": query,
+                               "memory_ids": res.memory_ids, "tokens_used": res.tokens_used,
+                               "budget": token_budget, "fallback": None, "scores": {}, "seeds": [],
+                               "full_history_tokens": self.counters["orig_tokens_written"]})
+        return res
 
     def prefix_text(self) -> str:
         return ""

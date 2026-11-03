@@ -136,13 +136,16 @@ def main(argv=None):
     ap.add_argument("--no-report", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.ERROR)
+    import warnings
+    # Some Gemini models ignore temperature; the provider warns on every call. Noted once here instead.
+    warnings.filterwarnings("ignore", message=r".*uses fixed sampling defaults.*")
 
     cfg = load_config(args.config, args.set)
     preset = args.preset or cfg.agents.preset
     mode = args.mode or cfg.experiment.mode
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    for f in ("calls", "answers", "traces", "memory_stats", "decisions", "turns", "runs"):
+    for f in ("calls", "answers", "traces", "memory_stats", "decisions", "turns", "runs", "failures"):
         (out / f"{f}.jsonl").unlink(missing_ok=True)
     cached = enable_llm_cache(cfg, preset)
     print(f"preset={preset} mode={mode} llm_cache={cached}")
@@ -152,23 +155,39 @@ def main(argv=None):
     scenarios = load_scenarios(args.scenarios, args.limit)
     conds = [c.strip() for c in args.conditions.split(",") if c.strip()]
     total = len(conds) * len(scenarios) * len(args.seeds)
-    n = 0
+    n = failed = 0
     for seed in args.seeds:
         for sc in scenarios:
             for cond in conds:
                 n += 1
                 t0 = time.perf_counter()
-                run_one(cond, sc, seed, cfg, preset, mode, out, checkpointer, args.emissions)
+                try:
+                    run_one(cond, sc, seed, cfg, preset, mode, out, checkpointer, args.emissions)
+                    status = "ok"
+                except Exception as e:   # no model left (quota, outage, missing key): skip, never fake
+                    failed += 1
+                    status = f"FAILED: {str(e)[:160]}"
+                    with open(out / "failures.jsonl", "a", encoding="utf-8") as f:
+                        f.write(json.dumps({"condition": cond, "scenario": sc["scenario_id"], "seed": seed,
+                                            "error": f"{type(e).__name__}: {e}"}) + "\n")
                 print(f"[{n}/{total}] {cond:<22} {sc['scenario_id']} seed={seed} "
-                      f"({time.perf_counter() - t0:.1f}s)")
+                      f"({time.perf_counter() - t0:.1f}s) {status}")
     (out / "scenarios.json").write_text(json.dumps(
         {s["scenario_id"]: s for s in scenarios}), encoding="utf-8")
-    if not args.no_report:
+    if failed:
+        print(f"\nWARNING: {failed}/{total} runs failed and are excluded (see {out / 'failures.jsonl'}).")
+    if not args.no_report and failed < total:
         from eval.metrics import compute_all
         from eval.plots import make_plots
         table = compute_all(out)
         make_plots(out)
         print(table.to_string())
+        import pandas as pd
+        per_run = pd.read_csv(out / "per_run.csv")
+        fb = per_run[per_run.fallback_calls > 0]
+        if len(fb):
+            print(f"\nWARNING: {len(fb)} runs used a fallback model for some calls "
+                  f"(column fallback_calls in per_run.csv); their results mix models.")
         print(f"\nresults in {out}")
 
 

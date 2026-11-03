@@ -116,7 +116,7 @@ CHATTER_PRE = ["Hey team, ", "FYI: ", "Quick update from the floor: ", "Just a h
 CHATTER_POST = [" Let me know if you need more details.", " I will keep an eye on it for the rest of the shift.",
                 " Please check when you get a chance.", " This was also written in the shift book.", ""]
 SPECS = [
-    ("Vibration limit for all CNC, VMC and lathe machines is {lim} mm/s.", ["sensor", "diagnosis"]),
+    ("Vibration limit for all machines is {lim} mm/s.", ["sensor", "diagnosis"]),
     ("Spindle and ball screw temperature limit is {tlim} °C.", ["sensor", "diagnosis"]),
     ("Rated spindle motor current is {r} A on all machines.", ["sensor", "diagnosis"]),
 ]
@@ -149,10 +149,12 @@ def alter_number(text: str, rng: random.Random) -> str:
     return text[:m.start()] + str(wrong) + text[m.end():]
 
 
-def generate(idx: int, seed: int = 42, split: str = "test", injected: bool = False) -> dict:
+def generate(idx: int, seed: int = 42, split: str = "test", injected: bool = False,
+             pool: list[str] | None = None, n_machines: tuple[int, int] = (4, 8)) -> dict:
     rng = random.Random(seed * 1000 + idx)
-    k = rng.randint(4, 8)
-    machines = rng.sample(MACHINE_POOL, k)
+    pool = pool or MACHINE_POOL
+    k = rng.randint(min(n_machines[0], len(pool)), min(n_machines[1], len(pool)))
+    machines = rng.sample(pool, k)
     n_q = rng.randint(3, min(6, k))
     with_none = rng.random() < 0.3
     n_faults = n_q - (1 if with_none else 0)

@@ -22,11 +22,11 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from agents.prompts import (AGENT_PROMPT, DIAGNOSIS_TASK, HISTORY_TASK, REPORT_TASK, ROLES,
-                            SENSOR_TASK)
+                            SENSOR_TASK, role_for, task_kind)
 from agents.schemas import ReportSchema, parse_report_text
 from graphmem.config import resolve_path
 from graphmem.lc import MEMORY_TOOLS
-from graphmem.models import format_memory_line
+from graphmem.models import format_memory_line, normalize_machine
 
 CITE = re.compile(r"\[(M\d+)\]")
 AGENT_FOR_EVENT = {"sensor_reading": "sensor", "operator_note": "sensor", "maintenance": "history",
@@ -37,10 +37,20 @@ def _rt(config: RunnableConfig) -> dict:
     return config["configurable"]
 
 
+THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+THINK_OPEN = re.compile(r"<think>.*", re.S | re.I)          # unclosed block (answer cut off)
+
+
+def strip_reasoning(text: str) -> str:
+    """Remove <think>...</think> blocks that reasoning models (e.g. qwen3) put in their answer."""
+    return THINK_OPEN.sub("", THINK.sub("", text)).strip()
+
+
 def _text(content: Any) -> str:
     if isinstance(content, list):
-        return " ".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content)
-    return str(content or "")
+        content = " ".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content
+                           if not (isinstance(p, dict) and p.get("type") in ("thinking", "reasoning")))
+    return strip_reasoning(str(content or ""))
 
 
 # ======================= agent subgraph =======================
@@ -76,8 +86,8 @@ def build_agent_graph():
             delivered = [h["memory_id"]] + [m for m in delivered if m != h["memory_id"]]
         task = {"sensor": SENSOR_TASK.format(text=query), "history": HISTORY_TASK.format(text=query),
                 "diagnosis": DIAGNOSIS_TASK.format(question=query),
-                "report": REPORT_TASK.format(question=query)}[agent]
-        role = ROLES[agent]
+                "report": REPORT_TASK.format(question=query)}[task_kind(agent)]
+        role = role_for(agent, rt.get("zones"))
         msgs = AGENT_PROMPT.format_messages(role=role["role"], role_description=role["description"],
                                             context=context_text or "(no facts available)", task=task)
         rt["logger"].set_context(turn=mem.now, agent=agent, event_id=ev.get("id"))
@@ -86,7 +96,7 @@ def build_agent_graph():
 
     def call_model(s: AgentState, config: RunnableConfig):
         rt = _rt(config)
-        chain = rt["models"][s["agent"]]
+        chain = rt["models"].get(s["agent"]) or rt["models"][task_kind(s["agent"])]   # zone agents use the sensor model
         cap = rt["cfg"].agents.max_expand_per_turn
         cb = {"callbacks": [rt["logger"]]}
         if s["agent"] == "report":
@@ -97,12 +107,17 @@ def build_agent_graph():
                 out, meta = chain.invoke(s["messages"], config=cb)
                 report = parse_report_text(_text(out.content)) or ReportSchema(
                     machine="", root_cause="none", action="", evidence=[])
+            report.machine = normalize_machine(report.machine)
+            report.evidence = [str(e).strip("[] ") for e in report.evidence]
             msg = AIMessage(content=report.model_dump_json())
             return {"messages": [msg], "report": report.model_dump(), "call_meta": meta}
         tools = MEMORY_TOOLS if s.get("n_tool_calls", 0) < cap else None
         out, meta = chain.invoke(s["messages"], tools=tools, config=cb)
         if not isinstance(out, AIMessage):
             out = AIMessage(content=_text(getattr(out, "content", out)))
+        elif not out.tool_calls:      # keep the visible answer only (reasoning is still counted in the logs)
+            out = AIMessage(content=_text(out.content), usage_metadata=out.usage_metadata,
+                            response_metadata=out.response_metadata)
         if not tools and out.tool_calls:            # cap reached: ignore further tool requests
             out = AIMessage(content=_text(out.content) or "No further information.")
         return {"messages": [out], "call_meta": meta}
@@ -131,7 +146,7 @@ def build_agent_graph():
     def write_answer(s: AgentState, config: RunnableConfig):
         rt = _rt(config)
         mem, agent = rt["memory"], s["agent"]
-        kind = "observation" if agent in ("sensor", "history") else "derived"
+        kind = "observation" if task_kind(agent) in ("sensor", "history") else "derived"
         mid = mem.write(agent, s["answer"], derived_from=s["cited"], event_id=s["event"].get("id"), kind=kind)
         mem.after_turn(agent, s.get("delivered", []), [] if s.get("citation_missing") else s["cited"])
         return {"memory_id": mid}
@@ -192,6 +207,9 @@ def build_orchestrator(checkpointer=None, interrupt_before_report: bool = False)
             rt = _rt(config)
             ev = s["current"]
             handoff = None
+            agent = name
+            if name == "sensor" and ev.get("source_agent") not in (None, "user", "sensor"):
+                agent = ev["source_agent"]           # car plant: the zone's own agent
             if name == "report":
                 if interrupt_before_report:
                     from langgraph.types import interrupt
@@ -199,11 +217,11 @@ def build_orchestrator(checkpointer=None, interrupt_before_report: bool = False)
                 handoff = {"memory_id": s["last"]["memory_id"], "text": s["last"]["answer"],
                            "turn": s["last"]["turn"]}
             start = rt["logger"].mark()
-            out = agent_graph.invoke({"agent": name, "event": ev, "handoff": handoff}, config)
+            out = agent_graph.invoke({"agent": agent, "event": ev, "handoff": handoff}, config)
             rt["logger"].annotate_since(start, delivered=out.get("delivered", []), cited=out.get("cited", []),
                                         citation_missing=out.get("citation_missing", False),
                                         tool_rounds=out.get("n_tool_calls", 0))
-            turn = {"turn": s["turn"], "agent": name, "event_id": ev["id"], "memory_id": out["memory_id"],
+            turn = {"turn": s["turn"], "agent": agent, "event_id": ev["id"], "memory_id": out["memory_id"],
                     "delivered": out.get("delivered", []), "cited": out.get("cited", []),
                     "context_tokens": out["context"]["tokens_used"], "answer": out["answer"],
                     "citation_missing": out.get("citation_missing", False),
@@ -256,17 +274,23 @@ def sqlite_checkpointer(path: str | None):
     return SqliteSaver(sqlite3.connect(str(p), check_same_thread=False))
 
 
-def register_agents(memory, machines: list[str]):
-    for name, r in ROLES.items():
+def register_agents(memory, machines: list[str], zones: dict | None = None):
+    core = ["history", "diagnosis", "report"] + ([] if zones else ["sensor"])
+    for name in core:
+        r = ROLES[name]
         memory.register_agent(name, r["role"], r["profile"] + (machines if name in ("sensor", "report") else []))
+    for zid in zones or {}:                       # car plant: one monitoring agent per zone
+        r = role_for(zid, zones)
+        memory.register_agent(zid, r["role"], r["profile"])
 
 
 def _prepare(scenario, memory, models, logger, cfg, mode, checkpointer, thread_id, token_budget):
-    register_agents(memory, scenario.get("machines", []))
+    zones = scenario.get("zones") or {}
+    register_agents(memory, scenario.get("machines", []), zones)
     app = build_orchestrator(checkpointer, cfg.get("demo", {}).get("interrupt_before_report", False))
     config = {"configurable": {"thread_id": thread_id or scenario["scenario_id"], "memory": memory,
                                "models": models, "logger": logger, "cfg": cfg, "mode": mode,
-                               "token_budget": token_budget},
+                               "token_budget": token_budget, "zones": zones},
               "recursion_limit": 6 * len(scenario["events"]) + 50}
     init = {"events": scenario["events"], "i": 0, "turn": 0, "answers": [], "turns": [], "maintenance_log": []}
     return app, config, init
