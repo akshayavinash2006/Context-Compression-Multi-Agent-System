@@ -20,6 +20,14 @@ compression:                       # W1
   force_reserve_digit: true
   safety_check: true
   fallback_rate_step: 0.2
+  context_ratio: 0.30              # final working-context budget as a fraction of its input
+  context_max_iterations: 2
+  context_weights:
+    relevance: 0.30
+    density: 0.20
+    novelty: 0.15
+    dependency: 0.15
+    criticality: 0.20
 
 keywords:                          # W2
   spacy_model: en_core_web_sm

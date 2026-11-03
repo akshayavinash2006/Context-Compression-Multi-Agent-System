@@ -47,3 +47,6 @@ def test_agent_tool_loop_calls_expand_once(cfg, mem):
     assert mem.counters["expand"] == 1
     assert "bearing_wear" in out["answer"]
     assert len(logger.records) == 2                               # tool-call round + final answer
+    cm = out["context"]["context_compression"]
+    assert cm["original_tokens"] >= cm["tokens"]
+    assert out["context"]["original_reference"] == out["delivered"]

@@ -27,6 +27,7 @@ from agents.schemas import ReportSchema, parse_report_text
 from graphmem.config import resolve_path
 from graphmem.lc import MEMORY_TOOLS
 from graphmem.models import format_memory_line, normalize_machine
+from graphmem.context_compression import ContextCompressor
 
 CITE = re.compile(r"\[(M\d+)\]")
 AGENT_FOR_EVENT = {"sensor_reading": "sensor", "operator_note": "sensor", "maintenance": "history",
@@ -88,10 +89,20 @@ def build_agent_graph():
                 "diagnosis": DIAGNOSIS_TASK.format(question=query),
                 "report": REPORT_TASK.format(question=query)}[task_kind(agent)]
         role = role_for(agent, rt.get("zones"))
+        context_compressor = ContextCompressor(
+            mem.count_tokens, target_ratio=cfg.compression.get("context_ratio", 0.30),
+            weights=dict(cfg.compression.get("context_weights", {})) or None,
+            max_iterations=cfg.compression.get("context_max_iterations", 2))
+        context_text, compression_meta = context_compressor(
+            context_text, task=task, metadata={"reference": delivered})
         msgs = AGENT_PROMPT.format_messages(role=role["role"], role_description=role["description"],
                                             context=context_text or "(no facts available)", task=task)
         rt["logger"].set_context(turn=mem.now, agent=agent, event_id=ev.get("id"))
-        return {"context": ctx.to_dict(), "delivered": delivered, "messages": msgs, "task": task,
+        context_meta = ctx.to_dict()
+        context_meta["context_compression"] = compression_meta
+        context_meta["original_reference"] = delivered
+        context_meta["tokens_used"] = compression_meta["tokens"]
+        return {"context": context_meta, "delivered": delivered, "messages": msgs, "task": task,
                 "n_tool_calls": 0}
 
     def call_model(s: AgentState, config: RunnableConfig):
@@ -224,6 +235,11 @@ def build_orchestrator(checkpointer=None, interrupt_before_report: bool = False)
             turn = {"turn": s["turn"], "agent": agent, "event_id": ev["id"], "memory_id": out["memory_id"],
                     "delivered": out.get("delivered", []), "cited": out.get("cited", []),
                     "context_tokens": out["context"]["tokens_used"], "answer": out["answer"],
+                    "original_context_tokens": out["context"].get("context_compression", {}).get("original_tokens", 0),
+                    "compression_ratio": out["context"].get("context_compression", {}).get("ratio", 1.0),
+                    "information_retention": out["context"].get("context_compression", {}).get("retention", 1.0),
+                    "compression_latency_s": out["context"].get("context_compression", {}).get("latency_s", 0.0),
+                    "compression_warning": out["context"].get("context_compression", {}).get("warning"),
                     "citation_missing": out.get("citation_missing", False),
                     "provider": (out.get("call_meta") or {}).get("provider"),
                     "fallback_used": (out.get("call_meta") or {}).get("fallback_used", False)}
