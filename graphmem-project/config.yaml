@@ -127,15 +127,22 @@ agents:
       default: {provider: mock, model: rule-based}
     single_provider:
       default: {provider: ollama, model: "qwen2.5:7b"}
+    groq_only:
+      sensor:     {provider: groq, model: qwen/qwen3.8-27b}
+      history:    {provider: groq, model: qwen/qwen3.8-27b}
+      diagnosis:  {provider: groq, model: qwen/qwen3.8-27b}
+      report:     {provider: groq, model: qwen/qwen3.8-27b}
+      summariser: {provider: groq, model: qwen/qwen3.8-27b}
+      default:    {provider: groq, model: qwen/qwen3.8-27b}
     multi_provider:
-      sensor:     {provider: ollama, model: "qwen2.5:3b"}
-      history:    {provider: ollama, model: "qwen2.5:7b"}
-      diagnosis:  {provider: groq, model: llama-3.3-70b-versatile}
-      report:     {provider: google_genai, model: gemini-2.0-flash}
-      summariser: {provider: ollama, model: "qwen2.5:3b"}
-      default:    {provider: ollama, model: "qwen2.5:7b"}
+      sensor:     {provider: groq, model: qwen/qwen3.8-27b}
+      history:    {provider: groq, model: qwen/qwen3.8-27b}
+      diagnosis:  {provider: groq, model: qwen/qwen3.8-27b}
+      report:     {provider: google_genai, model: gemini-2.5-flash}
+      summariser: {provider: groq, model: qwen/qwen3.8-27b}
+      default:    {provider: groq, model: qwen/qwen3.8-27b}
   fallbacks:
-    - {provider: ollama, model: "qwen2.5:7b"}
+    - {provider: groq, model: qwen/qwen3.8-27b}
     - {provider: mock, model: rule-based}
   rate_limits:                     # requests / second (0 = unlimited)
     groq: 0.5
