@@ -15,6 +15,7 @@ export interface AgentState { status: AgentStatus; since: number; writes: number
 export interface Packet { id: number; from: string; to: string; color: string; born: number; duration: number }
 export interface FeedItem { id: number; turn: number; kind: string; agent?: string; text: string; tag?: string; tagColor?: string; memoryId?: string }
 export interface TokenPoint { call: number; graph: number; full: number }
+export interface ContextFlow { from: string; to: string; memories: string[]; tokens: number; lastTurn: number }
 
 type Status = "disconnected" | "connected" | "running" | "done" | "stopped" | "error";
 
@@ -36,6 +37,8 @@ interface State {
   hubPulse: { at: number; color: string };
   feed: FeedItem[];
   tokens: TokenPoint[];
+  contextFlows: ContextFlow[];
+  memoryAuthors: Record<string, string>;
   graphCum: number;
   fullCum: number;
   lastRead: Record<string, ReadMsg>;
@@ -43,6 +46,7 @@ interface State {
   question?: { text: string; eventId: string; zone?: string | null };
   answers: AnswerMsg[];
   selectedAgent?: string;
+  agentGraphOpen: boolean;
   openMemory?: string;      // memory id shown in the drawer
   openTrace?: string;       // memory id shown in the trace modal
   set: (p: Partial<State>) => void;
@@ -58,9 +62,10 @@ export const decisionColor = (d: string) => DECISION_COLOR[d] ?? "#94a3b8";
 
 const runReset = {
   turn: 0, totalEvents: 0, agents: {} as Record<string, AgentState>, packets: [] as Packet[], feed: [] as FeedItem[],
-  tokens: [] as TokenPoint[], graphCum: 0, fullCum: 0, lastRead: {} as Record<string, ReadMsg>,
+  tokens: [] as TokenPoint[], contextFlows: [] as ContextFlow[], memoryAuthors: {} as Record<string, string>, graphCum: 0, fullCum: 0, lastRead: {} as Record<string, ReadMsg>,
   counts: { create: 0, merge: 0, update: 0, append: 0, active: 0, superseded: 0, origTokens: 0, storedTokens: 0 },
   question: undefined, answers: [] as AnswerMsg[], openMemory: undefined, openTrace: undefined, error: undefined,
+  agentGraphOpen: false,
 };
 
 export const useStore = create<State>((set, get) => ({
@@ -111,8 +116,17 @@ export const useStore = create<State>((set, get) => ({
           origTokens: w.orig_tokens_total ?? s.counts.origTokens, storedTokens: st.stored_tokens_active ?? s.counts.storedTokens };
         const packets = [...s.packets, packet(w.agent, "hub", decisionColor(w.decision))];
         for (const n of w.notified.slice(0, 3)) packets.push({ ...packet("hub", n, "#22d3ee", 1100), born: t + 700 });
+        const flows = [...s.contextFlows];
+        const authors = { ...s.memoryAuthors, [w.memory_id]: w.agent };
+        for (const recipient of w.notified ?? []) {
+          const existing = flows.find((f) => f.from === w.agent && f.to === recipient);
+          if (existing) {
+            existing.memories = [...new Set([...existing.memories, w.memory_id])].slice(-12);
+            existing.lastTurn = w.turn;
+          } else flows.push({ from: w.agent, to: recipient, memories: [w.memory_id], tokens: 0, lastTurn: w.turn });
+        }
         set({
-          counts, packets, hubPulse: { at: t + 800, color: decisionColor(w.decision) },
+          counts, packets, contextFlows: flows, memoryAuthors: authors, hubPulse: { at: t + 800, color: decisionColor(w.decision) },
           agents: agentPatch(w.agent, { status: "writing", since: t, writes: (s.agents[w.agent]?.writes ?? 0) + 1, lastText: w.text, lastMemory: w.memory_id }),
           feed: feed({ turn: w.turn, kind: "write", agent: w.agent, text: w.text, tag: w.decision.toUpperCase(), tagColor: decisionColor(w.decision), memoryId: w.memory_id }),
         });
@@ -122,11 +136,35 @@ export const useStore = create<State>((set, get) => ({
         const r = m as unknown as ReadMsg;
         const packets = [...s.packets];
         r.memory_ids.slice(0, 5).forEach((_, i) => packets.push({ ...packet("hub", r.agent, "#fbbf24", 1000), born: t + i * 120 }));
+        const flows = [...s.contextFlows];
+        for (const memoryId of r.memory_ids) {
+          const source = s.memoryAuthors[memoryId];
+          if (!source || source === r.agent) continue;
+          const existing = flows.find((f) => f.from === source && f.to === r.agent);
+          if (existing) {
+            existing.memories = [...new Set([...existing.memories, memoryId])].slice(-12);
+            existing.tokens = r.tokens_used;
+            existing.lastTurn = r.turn;
+          } else flows.push({ from: source, to: r.agent, memories: [memoryId], tokens: r.tokens_used, lastTurn: r.turn });
+        }
         set({
-          packets, lastRead: { ...s.lastRead, [r.agent]: r },
+          packets, contextFlows: flows, lastRead: { ...s.lastRead, [r.agent]: r },
           agents: agentPatch(r.agent, { status: "reading", since: t, reads: (s.agents[r.agent]?.reads ?? 0) + 1, lastDelivered: r.memory_ids }),
           feed: feed({ turn: r.turn, kind: "read", agent: r.agent, text: `${r.memory_ids.length} facts delivered, ${r.tokens_used} tokens${r.fallback ? ` (${r.fallback} fallback)` : ""}`, tag: "READ", tagColor: "#fbbf24" }),
         });
+        break;
+      }
+      case "context_flow": {
+        const from = m.from as string, to = m.to as string;
+        const memories = (m.memory_ids as string[] | undefined) ?? [];
+        const flows = [...s.contextFlows];
+        const existing = flows.find((f) => f.from === from && f.to === to);
+        if (existing) {
+          existing.memories = [...new Set([...existing.memories, ...memories])].slice(-12);
+          existing.tokens = m.tokens as number;
+          existing.lastTurn = m.turn as number;
+        } else flows.push({ from, to, memories, tokens: m.tokens as number, lastTurn: m.turn as number });
+        set({ contextFlows: flows });
         break;
       }
       case "llm_start": {

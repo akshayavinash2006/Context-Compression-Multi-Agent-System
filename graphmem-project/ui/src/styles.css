@@ -181,6 +181,27 @@ code.clickable:hover { background: #10313f; }
 .trace-text { margin: 4px 0; font-size: 13px; }
 .trace-children { margin-left: 8px; }
 
+/* ---------- agent context graph ---------- */
+.nav-item:not(.active):hover { background: var(--panel-2); border-color: var(--border-strong); }
+.agent-graph-modal { width: min(900px, 96vw); }
+.agent-graph-modal .muted { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.agent-graph-canvas { width: 100%; overflow-x: auto; background: #0a111b; border: 1px solid var(--border); border-radius: 12px; }
+.agent-graph-canvas svg { display: block; width: 100%; min-width: 620px; height: auto; }
+.topology-edge { fill: none; stroke: #52627a; stroke-width: 2; stroke-dasharray: 6 6; }
+.context-edge { fill: none; stroke-width: 3; opacity: .9; }
+.agent-node { fill: #111b28; stroke-width: 2; }
+.agent-node-active { filter: drop-shadow(0 0 8px #22d3ee88); }
+.agent-node-title { fill: var(--text); font: 600 15px var(--font); }
+.agent-node-model { fill: var(--muted); font: 10px var(--mono); }
+.flow-legend { display: flex; gap: 18px; color: var(--muted); font-size: 11px; padding: 10px 2px; }
+.flow-legend span { display: flex; align-items: center; gap: 6px; }
+.flow-legend i { width: 18px; height: 2px; display: inline-block; }
+.topology-swatch { background: #52627a; }
+.context-swatch { background: var(--accent); }
+.flow-list { max-height: 180px; overflow-y: auto; border-top: 1px solid var(--border); }
+.flow-row { display: grid; grid-template-columns: auto 18px auto minmax(120px, 1fr); align-items: center; gap: 6px; padding: 7px 4px; border-bottom: 1px solid #142033; font-size: 12px; }
+.flow-detail { color: var(--muted); text-align: right; overflow-wrap: anywhere; }
+
 /* ---------- small screens ---------- */
 @media (max-width: 1100px) {
   .content { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; }

@@ -95,6 +95,10 @@ def build_agent_graph():
             max_iterations=cfg.compression.get("context_max_iterations", 2))
         context_text, compression_meta = context_compressor(
             context_text, task=task, metadata={"reference": delivered})
+        if h and hasattr(mem, "emit"):
+            mem.emit("context_flow", {"from": "diagnosis", "to": agent,
+                                       "memory_ids": [h["memory_id"]],
+                                       "tokens": compression_meta["tokens"], "turn": h["turn"]})
         msgs = AGENT_PROMPT.format_messages(role=role["role"], role_description=role["description"],
                                             context=context_text or "(no facts available)", task=task)
         rt["logger"].set_context(turn=mem.now, agent=agent, event_id=ev.get("id"))

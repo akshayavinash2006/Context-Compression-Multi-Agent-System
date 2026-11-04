@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { connect, loadInitial, startRun } from "./api";
 import { AgentPanel } from "./panels/AgentPanel";
+import { AgentGraph } from "./panels/AgentGraph";
 import { Analytics } from "./panels/Analytics";
 import { Feed } from "./panels/Feed";
 import { MemoryDrawer, TraceModal } from "./panels/Overlays";
@@ -39,6 +40,10 @@ export default function App() {
         <button className="nav-item active" title="Plant floor">
           <svg viewBox="0 0 24 24"><path d="M3 21V10l6 4V10l6 4V6l6 4v11z" /></svg>
         </button>
+        <button className="nav-item" title="Agent context graph" aria-label="Open agent context graph"
+          onClick={() => useStore.getState().set({ agentGraphOpen: true })}>
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2" /><circle cx="19" cy="6" r="2.2" /><circle cx="12" cy="18" r="2.2" /><path d="m7 7 3.5 8M17 7l-3.5 8M7.5 6h9" /></svg>
+        </button>
       </nav>
       <div className="main">
         <TopBar />
@@ -60,6 +65,7 @@ export default function App() {
       </div>
       <MemoryDrawer />
       <TraceModal />
+      <AgentGraph />
     </div>
   );
 }
