@@ -16,6 +16,8 @@ export interface Packet { id: number; from: string; to: string; color: string; b
 export interface FeedItem { id: number; turn: number; kind: string; agent?: string; text: string; tag?: string; tagColor?: string; memoryId?: string }
 export interface TokenPoint { call: number; graph: number; full: number }
 
+export interface RunConfig { scenario: string; preset: string; condition: string; mode: string; delay: number }
+
 type Status = "disconnected" | "connected" | "running" | "done" | "stopped" | "error";
 
 interface State {
@@ -42,6 +44,8 @@ interface State {
   counts: { create: number; merge: number; update: number; append: number; active: number; superseded: number; origTokens: number; storedTokens: number };
   question?: { text: string; eventId: string; zone?: string | null };
   answers: AnswerMsg[];
+  cfg: RunConfig;
+  setCfg: (p: Partial<RunConfig>) => void;
   selectedAgent?: string;
   openMemory?: string;      // memory id shown in the drawer
   openTrace?: string;       // memory id shown in the trace modal
@@ -73,6 +77,8 @@ export const useStore = create<State>((set, get) => ({
   zonesInRun: [],
   hubPulse: { at: 0, color: "#22d3ee" },
   ...runReset,
+  cfg: { scenario: "", preset: "mock", condition: "graph", mode: "replay", delay: 0.5 },
+  setCfg: (p) => set({ cfg: { ...get().cfg, ...p } }),
   set: (p) => set(p),
   reset: () => set({ ...runReset }),
 
