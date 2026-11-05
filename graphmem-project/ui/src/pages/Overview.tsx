@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { AgentLens } from "../components/AgentLens";
 import { AgentSheet } from "../components/AgentSheet";
 import { Counter, Spark } from "../components/ui";
 import { ZONES } from "../layout";
@@ -90,12 +91,16 @@ function Rail() {
 }
 
 export function Overview() {
+  const selected = useStore((s) => s.selectedAgent);
   return (
     <motion.div className="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.15 } }}>
-      <motion.div className="scene" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, ease: "easeOut" }}>
-        <Factory />
-        <SceneOverlay />
-      </motion.div>
+      <div className={`floor ${selected ? "with-lens" : ""}`}>
+        <motion.div className="scene" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, ease: "easeOut" }}>
+          <Factory />
+          <SceneOverlay />
+        </motion.div>
+        <AnimatePresence>{selected && <AgentLens key={selected} id={selected} />}</AnimatePresence>
+      </div>
       <Rail />
     </motion.div>
   );

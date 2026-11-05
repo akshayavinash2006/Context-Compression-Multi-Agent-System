@@ -15,6 +15,31 @@ export interface AgentState { status: AgentStatus; since: number; writes: number
 export interface Packet { id: number; from: string; to: string; color: string; born: number; duration: number }
 export interface FeedItem { id: number; turn: number; kind: string; agent?: string; text: string; tag?: string; tagColor?: string; memoryId?: string }
 export interface TokenPoint { call: number; graph: number; full: number }
+// Agent -> agent context transfer: a memory written by `from` reached `to` (pushed, read, or handed off).
+export type FlowVia = "push" | "read" | "handoff";
+export interface ContextFlow { from: string; to: string; memories: string[]; count: number; tokens: number; lastTurn: number; via: FlowVia[] }
+
+// Everything the UI has seen about one memory, built from the live stream.
+export interface MemInfo {
+  id: string; text: string; kind: string; turn: number; tokens: number; origTokens?: number;
+  authors: string[]; readers: string[]; pushedTo: string[]; derivedFrom: string[];
+  supersedes?: string; supersededBy?: string; keywords: string[];
+}
+// One write by one agent. Merges commit into an existing memory, so one memory can have several commits.
+export interface Commit { seq: number; memoryId: string; decision: string; turn: number; text: string; original: string; notified: string[]; superseded?: string | null }
+
+const MAX_COMMITS = 60;
+const addUnique = (xs: string[], x: string) => (xs.includes(x) ? xs : [...xs, x]);
+
+function addFlow(flows: ContextFlow[], from: string, to: string, memoryId: string, via: FlowVia, turn: number, tokens = 0): ContextFlow[] {
+  if (!from || !to || from === to) return flows;
+  const i = flows.findIndex((f) => f.from === from && f.to === to);
+  if (i < 0) return [...flows, { from, to, memories: [memoryId], count: 1, tokens, lastTurn: turn, via: [via] }];
+  const f = flows[i];
+  const next = { ...f, memories: addUnique(f.memories, memoryId).slice(-24), count: f.count + 1, lastTurn: turn,
+    tokens: tokens || f.tokens, via: addUnique(f.via, via) as FlowVia[] };
+  return flows.map((g, j) => (j === i ? next : g));
+}
 
 export interface RunConfig { scenario: string; preset: string; condition: string; mode: string; delay: number }
 
@@ -38,6 +63,9 @@ interface State {
   hubPulse: { at: number; color: string };
   feed: FeedItem[];
   tokens: TokenPoint[];
+  contextFlows: ContextFlow[];
+  memories: Record<string, MemInfo>;
+  commits: Record<string, Commit[]>;   // agent -> its writes, oldest first
   graphCum: number;
   fullCum: number;
   lastRead: Record<string, ReadMsg>;
@@ -62,7 +90,7 @@ export const decisionColor = (d: string) => DECISION_COLOR[d] ?? "#94a3b8";
 
 const runReset = {
   turn: 0, totalEvents: 0, agents: {} as Record<string, AgentState>, packets: [] as Packet[], feed: [] as FeedItem[],
-  tokens: [] as TokenPoint[], graphCum: 0, fullCum: 0, lastRead: {} as Record<string, ReadMsg>,
+  tokens: [] as TokenPoint[], contextFlows: [] as ContextFlow[], memories: {} as Record<string, MemInfo>, commits: {} as Record<string, Commit[]>, graphCum: 0, fullCum: 0, lastRead: {} as Record<string, ReadMsg>,
   counts: { create: 0, merge: 0, update: 0, append: 0, active: 0, superseded: 0, origTokens: 0, storedTokens: 0 },
   question: undefined, answers: [] as AnswerMsg[], openMemory: undefined, openTrace: undefined, error: undefined,
 };
@@ -117,8 +145,23 @@ export const useStore = create<State>((set, get) => ({
           origTokens: w.orig_tokens_total ?? s.counts.origTokens, storedTokens: st.stored_tokens_active ?? s.counts.storedTokens };
         const packets = [...s.packets, packet(w.agent, "hub", decisionColor(w.decision))];
         for (const n of w.notified.slice(0, 3)) packets.push({ ...packet("hub", n, "#22d3ee", 1100), born: t + 700 });
+
+        const prev = s.memories[w.memory_id];
+        const memories = { ...s.memories, [w.memory_id]: {
+          id: w.memory_id, text: w.text, kind: w.kind, turn: prev?.turn ?? w.turn, tokens: w.tokens, origTokens: w.orig_tokens,
+          authors: addUnique(prev?.authors ?? [], w.agent), readers: prev?.readers ?? [],
+          pushedTo: [...new Set([...(prev?.pushedTo ?? []), ...w.notified])], derivedFrom: w.derived_from ?? [],
+          keywords: w.keywords ?? [], supersedes: w.superseded ?? prev?.supersedes, supersededBy: prev?.supersededBy,
+        } };
+        if (w.superseded && memories[w.superseded]) memories[w.superseded] = { ...memories[w.superseded], supersededBy: w.memory_id };
+        const commit: Commit = { seq: seq++, memoryId: w.memory_id, decision: w.decision, turn: w.turn, text: w.text,
+          original: w.original, notified: w.notified, superseded: w.superseded };
+        const commits = { ...s.commits, [w.agent]: [...(s.commits[w.agent] ?? []), commit].slice(-MAX_COMMITS) };
+        let flows = s.contextFlows;
+        for (const n of w.notified) flows = addFlow(flows, w.agent, n, w.memory_id, "push", w.turn);
+
         set({
-          counts, packets, hubPulse: { at: t + 800, color: decisionColor(w.decision) },
+          counts, packets, memories, commits, contextFlows: flows, hubPulse: { at: t + 800, color: decisionColor(w.decision) },
           agents: agentPatch(w.agent, { status: "writing", since: t, writes: (s.agents[w.agent]?.writes ?? 0) + 1, lastText: w.text, lastMemory: w.memory_id }),
           feed: feed({ turn: w.turn, kind: "write", agent: w.agent, text: w.text, tag: w.decision.toUpperCase(), tagColor: decisionColor(w.decision), memoryId: w.memory_id }),
         });
@@ -128,11 +171,31 @@ export const useStore = create<State>((set, get) => ({
         const r = m as unknown as ReadMsg;
         const packets = [...s.packets];
         r.memory_ids.slice(0, 5).forEach((_, i) => packets.push({ ...packet("hub", r.agent, "#fbbf24", 1000), born: t + i * 120 }));
+        const memories = { ...s.memories };
+        let flows = s.contextFlows;
+        for (const id of r.memory_ids) {
+          const mi = memories[id];
+          if (!mi) continue;
+          memories[id] = { ...mi, readers: addUnique(mi.readers, r.agent) };
+          for (const author of mi.authors) flows = addFlow(flows, author, r.agent, id, "read", r.turn, r.tokens_used);
+        }
         set({
-          packets, lastRead: { ...s.lastRead, [r.agent]: r },
+          packets, memories, contextFlows: flows, lastRead: { ...s.lastRead, [r.agent]: r },
           agents: agentPatch(r.agent, { status: "reading", since: t, reads: (s.agents[r.agent]?.reads ?? 0) + 1, lastDelivered: r.memory_ids }),
           feed: feed({ turn: r.turn, kind: "read", agent: r.agent, text: `${r.memory_ids.length} facts delivered, ${r.tokens_used} tokens${r.fallback ? ` (${r.fallback} fallback)` : ""}`, tag: "READ", tagColor: "#fbbf24" }),
         });
+        break;
+      }
+      case "context_flow": {
+        // Explicit hand-off (Diagnosis -> Report): the memory goes straight into the receiver's prompt.
+        const from = m.from as string, to = m.to as string;
+        let flows = s.contextFlows;
+        const memories = { ...s.memories };
+        for (const id of (m.memory_ids as string[] | undefined) ?? []) {
+          flows = addFlow(flows, from, to, id, "handoff", m.turn as number, m.tokens as number);
+          if (memories[id]) memories[id] = { ...memories[id], readers: addUnique(memories[id].readers, to) };
+        }
+        set({ contextFlows: flows, memories });
         break;
       }
       case "llm_start": {

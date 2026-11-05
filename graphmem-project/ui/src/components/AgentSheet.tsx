@@ -1,12 +1,13 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ZONE_BY_ID, zoneFor } from "../layout";
 import { STATUS_COLOR, STATUS_LABEL } from "../status";
-import { useStore } from "../store";
+import { decisionColor, useStore } from "../store";
 
 const ROLE_OF = (id: string) => (["history", "diagnosis", "report"].includes(id) ? id : "sensor");
 
 export function AgentSheet({ id, onClose }: { id: string; onClose?: () => void }) {
-  const { agents, models, set } = useStore();
+  const { agents, models, commits, memories, set } = useStore();
+  const mine = commits[id] ?? [];
   const z = ZONE_BY_ID[id] ?? zoneFor(id);
   const a = agents[id];
   const model = models[ROLE_OF(id)];
@@ -29,12 +30,28 @@ export function AgentSheet({ id, onClose }: { id: string; onClose?: () => void }
         <div><b>{(a?.inputTokens ?? 0).toLocaleString()}</b><span>input tokens</span></div>
       </div>
       <dl className="dl"><dt>Model</dt><dd>{model?.primary ?? "Not used in this run"}</dd></dl>
-      {a?.lastText && (
-        <div className="block">
-          <div className="label">Last fact written {a.lastMemory && <code className="chip link" onClick={() => set({ openMemory: a.lastMemory })}>{a.lastMemory}</code>}</div>
-          <p className="quote">{a.lastText}</p>
-        </div>
-      )}
+      <div className="block">
+        <div className="label">Commits · {mine.length}</div>
+        {mine.length === 0 ? <p className="muted small">Nothing committed yet.</p> : (
+          <ul className="commits">
+            <AnimatePresence initial={false}>
+              {[...mine].reverse().slice(0, 8).map((c) => (
+                <motion.li key={c.seq} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} onClick={() => set({ openMemory: c.memoryId })}>
+                  <div className="c-head">
+                    <span className="ftag" style={{ color: decisionColor(c.decision) }}>{c.decision.toUpperCase()}</span>
+                    <code>{c.memoryId}</code>
+                    {c.superseded && <span className="c-note">replaces {c.superseded}</span>}
+                    {memories[c.memoryId]?.supersededBy && <span className="c-note bad">replaced</span>}
+                    <span className="c-turn">t{c.turn}</span>
+                  </div>
+                  <p>{c.text}</p>
+                  {c.notified.length > 0 && <div className="c-to">→ {c.notified.map((n) => zoneFor(n).name).join(", ")}</div>}
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
+        )}
+      </div>
       {a?.lastDelivered?.length ? (
         <div className="block">
           <div className="label">Last facts received</div>
