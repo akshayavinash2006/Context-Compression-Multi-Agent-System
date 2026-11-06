@@ -86,7 +86,7 @@ export function TopBar({ route }: { route: Route }) {
         </div>
         {running
           ? <button className="btn danger" onClick={stopRun}>Stop</button>
-          : <motion.button className="btn primary" disabled={!canStart} whileTap={{ scale: 0.97 }} onClick={() => startRun(cfg)}>
+          : <motion.button className="btn primary" disabled={!canStart} title={wsStatus === "disconnected" ? "The backend is not reachable" : !cfg.scenario ? "Pick or generate a scenario in run settings" : undefined} whileTap={{ scale: 0.97 }} onClick={() => startRun(cfg)}>
               <svg viewBox="0 0 24 24"><path d="M7 5v14l12-7z" /></svg>Start run
             </motion.button>}
       </div>

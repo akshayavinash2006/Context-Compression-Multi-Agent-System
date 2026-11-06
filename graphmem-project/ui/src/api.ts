@@ -7,7 +7,11 @@ export function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws/run`);
-  ws.onopen = () => useStore.getState().set({ wsStatus: "connected", error: undefined });
+  ws.onopen = () => {
+    useStore.getState().set({ wsStatus: "connected", error: undefined });
+    // The server may have started after the page loaded, so fetch scenarios and presets again.
+    if (useStore.getState().scenarios.length === 0) void loadInitial();
+  };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.type !== "hello") useStore.getState().handle(m);

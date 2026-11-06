@@ -84,6 +84,8 @@ export const useStore = create<State>((set, get) => ({
 
   handle: (m) => {
     const s = get();
+    // A run that was replaced or stopped can still deliver late messages; ignore anything from another run.
+    if (m.type !== "run_started" && m.run_id && s.runId && m.run_id !== s.runId) return;
     const t = now();
     const agentPatch = (name: string, patch: Partial<AgentState>) => ({
       ...s.agents, [name]: { ...(s.agents[name] ?? blankAgent()), ...patch },
