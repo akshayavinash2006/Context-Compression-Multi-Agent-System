@@ -22,7 +22,8 @@ export function useCountUp(value: number, ms = 800) {
 }
 
 export function Counter({ value, decimals = 0, suffix = "" }: { value: number; decimals?: number; suffix?: string }) {
-  const v = useCountUp(value);
+  const raw = useCountUp(value);
+  const v = Math.abs(raw) < 0.5 / 10 ** decimals ? 0 : raw;   // avoids a flash of "-0"
   return <>{v.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{suffix}</>;
 }
 

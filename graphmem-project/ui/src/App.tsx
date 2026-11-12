@@ -9,12 +9,14 @@ import { Analytics } from "./pages/Analytics";
 import { Diagnosis } from "./pages/Diagnosis";
 import { MemoryGraph } from "./pages/MemoryGraph";
 import { Overview } from "./pages/Overview";
+import { Run } from "./pages/Run";
 import { ROUTES, go, useRoute, type Route } from "./router";
 import { settleAgents, useStore } from "./store";
 
 let autostarted = false;
 
 const ICONS: Record<Route, string> = {
+  run: "M7 4.5v15l12-7.5z",
   overview: "M3 21V9l6 3V9l6 3V5l6 4v12z",
   analytics: "M4 20V10m6 10V4m6 16v-7m5 7H3",
   activity: "M3 12h4l3-8 4 16 3-8h4",
@@ -24,7 +26,7 @@ const ICONS: Record<Route, string> = {
 };
 
 const PAGES: Record<Route, () => React.JSX.Element> = {
-  overview: Overview, analytics: Analytics, activity: Activity, diagnosis: Diagnosis, graph: MemoryGraph, agents: Agents,
+  overview: Overview, run: Run, analytics: Analytics, activity: Activity, diagnosis: Diagnosis, graph: MemoryGraph, agents: Agents,
 };
 
 export default function App() {

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
-export type Route = "overview" | "analytics" | "activity" | "diagnosis" | "graph" | "agents";
+export type Route = "overview" | "run" | "analytics" | "activity" | "diagnosis" | "graph" | "agents";
 
 export const ROUTES: { id: Route; label: string; hint: string }[] = [
   { id: "overview", label: "Plant Overview", hint: "Live factory floor" },
+  { id: "run", label: "Run", hint: "Configure, start and follow a run" },
   { id: "analytics", label: "Memory Analytics", hint: "Token savings and memory health" },
   { id: "activity", label: "Activity", hint: "Every read, write and model call" },
   { id: "diagnosis", label: "Diagnosis", hint: "Questions, answers and traces" },

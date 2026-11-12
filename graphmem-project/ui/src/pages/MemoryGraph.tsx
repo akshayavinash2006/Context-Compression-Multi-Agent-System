@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Empty, Page } from "../components/ui";
 import { getJSON } from "../api";
 import { ZONES, zoneFor } from "../layout";
-import { useStore } from "../store";
+import { decisionColor, useStore } from "../store";
+import { readable } from "../report";
+import { ReportCard } from "../components/ReportCard";
 
 interface GNode { id: string; type: string; kind?: string; label: string; active?: boolean }
 interface GEdge { source: string; target: string; type: string }
@@ -36,6 +38,7 @@ export function MemoryGraph() {
       sim.current = next;
       edgeRef.current = g.edges.filter((e) => next.has(e.source) && next.has(e.target));
       setEdges(edgeRef.current);
+      setNodes([...next.values()]);
       alpha.current = 1;
     }).catch(() => {});
     pull();
@@ -119,7 +122,10 @@ export function MemoryGraph() {
               {nodes.map((n) => (
                 <g key={n.id} transform={`translate(${n.x},${n.y})`} className={`g-node ${n.type} ${n.active === false ? "off" : ""} ${focusing ? (hot.has(n.id) ? "hot" : "dim") : ""}`}
                   onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(undefined)}
-                  onClick={() => n.type === "memory" && set({ openMemory: n.id })}>
+                  onClick={() => {
+                    if (n.type === "memory") set({ openMemory: n.id });
+                    else if (n.type === "agent") set({ selectedAgent: selectedAgent === n.id.slice(2) ? undefined : n.id.slice(2) });
+                  }}>
                   {focusing && hot.has(n.id) && n.type === "memory" && <circle r={11} className="g-ring" style={{ stroke: focusColor }} />}
                   <circle r={n.type === "memory" ? 7 : n.type === "agent" ? (n.id === focusId ? 12 : 9) : 4.5} fill={n.id === focusId ? focusColor : nodeColor(n)} style={{ filter: `drop-shadow(0 0 6px ${n.id === focusId ? focusColor : nodeColor(n)})` }} />
                 </g>
@@ -136,6 +142,39 @@ export function MemoryGraph() {
           </>
         )}
       </div>
+      {selectedAgent && <AgentWrites id={selectedAgent} />}
     </Page>
+  );
+}
+
+// What the focused agent actually wrote, in full, so a click on an agent explains itself.
+function AgentWrites({ id }: { id: string }) {
+  const { commits, answers, set } = useStore();
+  const z = zoneFor(id);
+  const mine = [...(commits[id] ?? [])].reverse();
+  return (
+    <section className="card writes" style={{ ["--accent" as string]: z.color }}>
+      <header className="card-head"><h2>{id === "report" ? "Reports written by" : "Written by"} {z.name}</h2><span className="muted">{id === "report" ? answers.length : mine.length} total</span></header>
+      <div className="card-body">
+        {id === "report" ? (
+          answers.length === 0 ? <p className="muted">No report yet. One is written after each diagnosis question.</p> : (
+            <div className="rgrid">
+              {[...answers].reverse().map((a) => (
+                <ReportCard key={a.event_id} report={{ ...a.report }} question={a.question} verdict={a.correct} expected={a.gold} traceId={a.report_memory_id} />
+              ))}
+            </div>
+          )
+        ) : mine.length === 0 ? <p className="muted">{z.name} has not committed anything yet.</p> : (
+          <ul className="wlist">
+            {mine.slice(0, 12).map((c) => (
+              <li key={c.seq} onClick={() => set({ openMemory: c.memoryId })}>
+                <div><span className="ftag" style={{ color: decisionColor(c.decision) }}>{c.decision.toUpperCase()}</span><code>{c.memoryId}</code><span className="muted">t{c.turn}</span></div>
+                <p>{readable(c.text)}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }

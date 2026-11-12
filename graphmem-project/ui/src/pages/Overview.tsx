@@ -18,7 +18,7 @@ function SceneOverlay() {
       <div className="scene-title">
         <span className="eyebrow">{wsStatus === "running" ? "Live shift" : "Plant floor"}</span>
         <h1>{sc ? `Scenario ${sc.id}` : "AutoPlant"}</h1>
-        <p>{sc ? `${sc.events} events · ${sc.questions} diagnosis questions` : "Generate a scenario in run settings, then start a run."}</p>
+        <p>{sc ? `${sc.events} events · ${sc.questions} diagnosis questions` : "Open the Run page to choose options and start a run."}</p>
         {totalEvents > 0 && <p className="turn">Event <b><Counter value={turn} /></b> of {totalEvents}</p>}
       </div>
       <div className="scene-legend">{LEGEND.map(([c, l]) => <span key={l}><i style={{ background: c, boxShadow: `0 0 8px ${c}` }} />{l}</span>)}</div>

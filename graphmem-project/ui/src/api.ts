@@ -7,7 +7,11 @@ export function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws/run`);
-  ws.onopen = () => useStore.getState().set({ wsStatus: "connected", error: undefined });
+  ws.onopen = () => {
+    useStore.getState().set({ wsStatus: "connected", error: undefined });
+    // The server may have started after the page loaded, so fetch scenarios and presets again.
+    if (useStore.getState().scenarios.length === 0) void loadInitial();
+  };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.type !== "hello") useStore.getState().handle(m);
@@ -22,8 +26,14 @@ export function connect() {
 export interface StartOptions { scenario: string; preset: string; condition: string; mode: string; delay: number }
 
 export function startRun(o: StartOptions) {
-  useStore.getState().reset();
-  ws?.send(JSON.stringify({ type: "start", ...o }));
+  const st = useStore.getState();
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    st.set({ error: "Cannot start: the backend is not connected. Check that the server is running on port 8000." });
+    return;
+  }
+  st.reset();
+  st.set({ starting: true, startedAt: performance.now(), finishedAt: undefined, scenarioId: o.scenario, wsStatus: "connected" });
+  ws.send(JSON.stringify({ type: "start", ...o }));
 }
 
 export function stopRun() {

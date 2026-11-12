@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { readable } from "./report";
 
 // ---------- server message types ----------
 export interface ScenarioInfo { id: string; kind: string; events: number; questions: number; machines: string[]; has_zones: boolean; injected: boolean }
@@ -72,6 +73,9 @@ interface State {
   counts: { create: number; merge: number; update: number; append: number; active: number; superseded: number; origTokens: number; storedTokens: number };
   question?: { text: string; eventId: string; zone?: string | null };
   answers: AnswerMsg[];
+  starting: boolean;        // Start pressed, waiting for the server to prepare the run
+  startedAt?: number;       // performance.now() when the run began
+  finishedAt?: number;
   cfg: RunConfig;
   setCfg: (p: Partial<RunConfig>) => void;
   selectedAgent?: string;
@@ -105,6 +109,7 @@ export const useStore = create<State>((set, get) => ({
   zonesInRun: [],
   hubPulse: { at: 0, color: "#22d3ee" },
   ...runReset,
+  starting: false,
   cfg: { scenario: "", preset: "mock", condition: "graph", mode: "replay", delay: 0.5 },
   setCfg: (p) => set({ cfg: { ...get().cfg, ...p } }),
   set: (p) => set(p),
@@ -112,6 +117,8 @@ export const useStore = create<State>((set, get) => ({
 
   handle: (m) => {
     const s = get();
+    // A run that was replaced or stopped can still deliver late messages; ignore anything from another run.
+    if (m.type !== "run_started" && m.run_id && s.runId && m.run_id !== s.runId) return;
     const t = now();
     const agentPatch = (name: string, patch: Partial<AgentState>) => ({
       ...s.agents, [name]: { ...(s.agents[name] ?? blankAgent()), ...patch },
@@ -122,7 +129,7 @@ export const useStore = create<State>((set, get) => ({
     switch (m.type) {
       case "run_started": {
         const sc = m.scenario as { events: PlantEvent[]; zones?: Record<string, unknown> };
-        set({ ...runReset, runId: m.run_id as string, wsStatus: "running", models: m.models as State["models"],
+        set({ ...runReset, starting: false, startedAt: t, finishedAt: undefined, runId: m.run_id as string, wsStatus: "running", models: m.models as State["models"],
           zonesInRun: Object.keys(sc.zones ?? {}), totalEvents: sc.events.length, condition: m.condition as string,
           preset: m.preset as string });
         break;
@@ -138,7 +145,8 @@ export const useStore = create<State>((set, get) => ({
         break;
       }
       case "write": {
-        const w = m as unknown as WriteMsg;
+        const w0 = m as unknown as WriteMsg;
+        const w: WriteMsg = { ...w0, text: readable(w0.text) };   // reports are stored as JSON; show them as a sentence
         const st = (w.stats ?? {}) as Record<string, number>;
         const counts = { ...s.counts, [w.decision]: (s.counts[w.decision as keyof typeof s.counts] as number ?? 0) + 1,
           active: st.active_memories ?? s.counts.active, superseded: st.superseded_memories ?? s.counts.superseded,
@@ -230,10 +238,10 @@ export const useStore = create<State>((set, get) => ({
         break;
       }
       case "done":
-        set({ wsStatus: (m.status as Status) ?? "done" });
+        set({ wsStatus: (m.status as Status) ?? "done", finishedAt: t, starting: false });
         break;
       case "error":
-        set({ wsStatus: "error", error: m.message as string });
+        set({ wsStatus: "error", error: m.message as string, starting: false });
         break;
     }
   },

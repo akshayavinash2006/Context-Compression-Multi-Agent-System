@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { getJSON } from "../api";
 import { zoneFor } from "../layout";
 import { useStore } from "../store";
+import { parseReport, readable } from "../report";
+import { ReportCard } from "./ReportCard";
 
 interface Original { agent: string; turn: number; text: string; event_id?: string }
 interface MemoryDetail { id: string; text: string; kind: string; turn: number; agents: string[]; readers?: string[]; sent_to?: string[]; keywords: string[]; derived_from: string[]; supersedes?: string[]; superseded?: boolean; tokens?: number; orig_tokens?: number; strength?: number; use_count?: number; n_writers?: number; originals: Original[] }
@@ -41,8 +43,12 @@ export function MemoryDrawer() {
                   {data.strength !== undefined && <span className="badge">strength {data.strength}</span>}
                   {data.n_writers && data.n_writers > 1 && <span className="badge ok">reported {data.n_writers}×</span>}
                 </div>
-                <div className="label">Stored text</div>
-                <p className="quote">{data.text}</p>
+                {(() => {
+                  const r = data.kind === "report" ? parseReport(data.text) : undefined;
+                  return r
+                    ? <><div className="label">Report</div><ReportCard report={r} /></>
+                    : <><div className="label">Stored text</div><p className="quote">{data.text}</p></>;
+                })()}
                 <dl className="dl">
                   <dt>Written by</dt><dd>{data.agents.map((a) => <AgentTag key={a} name={a} />)}</dd>
                   {data.readers && <><dt>Read by</dt><dd>{data.readers.length ? data.readers.map((a) => <AgentTag key={a} name={a} />) : "–"}</dd></>}
@@ -73,7 +79,7 @@ function TraceTree({ node, depth = 0 }: { node: TraceNode; depth?: number }) {
         {node.agents.map((a) => <AgentTag key={a} name={a} />)}
         {node.superseded && <span className="badge bad">replaced</span>}
       </div>
-      <p className="trace-text">{node.text}</p>
+      <p className="trace-text">{readable(node.text)}</p>
       {node.kind === "observation" && node.originals.map((o, i) => <p key={i} className="original small">source {o.event_id ?? ""}: {o.text}</p>)}
       {node.sources.length > 0 && <div className="trace-children">{node.sources.map((c) => <TraceTree key={c.id + depth} node={c} depth={depth + 1} />)}</div>}
     </motion.div>
