@@ -127,6 +127,8 @@ agents:
       default: {provider: mock, model: rule-based}
     single_provider:
       default: {provider: ollama, model: "qwen2.5:7b"}
+    qwen3_local:
+      default: {provider: ollama, model: "qwen3:8b"}
     multi_provider:
       sensor:     {provider: ollama, model: "qwen2.5:3b"}
       history:    {provider: ollama, model: "qwen2.5:7b"}
@@ -143,7 +145,7 @@ agents:
     openrouter: 0.3
     ollama: 0
     mock: 0
-  ollama_base_url: http://localhost:11434
+  ollama_base_url: http://127.0.0.1:11434
   openrouter_base_url: https://openrouter.ai/api/v1
 
 experiment:

@@ -32,7 +32,8 @@ python -m spacy download en_core_web_sm    # if you installed the models
 copy .env.example .env                     # API keys for the multi_provider preset
 ```
 
-LLMs: install [Ollama](https://ollama.com), then `ollama pull qwen2.5:7b` and `ollama pull qwen2.5:3b`.
+LLMs: install [Ollama](https://ollama.com), then pull the models required by the selected preset.
+For the local Qwen 3 benchmark below, run `ollama pull qwen3:8b`.
 For free-tier APIs, put `GROQ_API_KEY` / `GOOGLE_API_KEY` / `OPENROUTER_API_KEY` in `.env`.
 
 ## Presets (`--preset`)
@@ -41,6 +42,7 @@ For free-tier APIs, put `GROQ_API_KEY` / `GOOGLE_API_KEY` / `OPENROUTER_API_KEY`
 |---|---|
 | `mock` | Deterministic rule-based chat model; no GPU, no network (tests, quick dev runs) |
 | `single_provider` | All agents on local Ollama `qwen2.5:7b` (main controlled experiments) |
+| `qwen3_local` | All agents on local Ollama `qwen3:8b` (same-model benchmark) |
 | `multi_provider` | Sensor: Ollama 3B, History: Ollama 7B, Diagnosis: Groq Llama-3.3-70B, Report: Gemini Flash |
 
 Unavailable models (no key, no server) are skipped with a printed reason and the next
@@ -76,6 +78,7 @@ python -m data.simulator --n 50 --split test --injected 10   # data/scenarios/te
 python -m eval.run_experiment --scenarios data/scenarios/dev --preset mock --out results/dev_mock
 python -m eval.run_experiment --scenarios data/scenarios/test --preset single_provider --seeds 42 43 44 --out results/run_01 --emissions
 python -m eval.run_experiment --conditions graph,graph:no_ppr,graph:no_merge,graph:no_push,graph:no_mmr,graph:no_compression,graph:budget=100 --scenarios data/scenarios/dev --preset mock --out results/ablations
+python -m eval.benchmark_qwen3 --scenarios data/scenarios/dev --seeds 42 43 44 --out results/qwen3_8b
 python -m viz.trace_view                  # trace of the worked example -> results/trace.html
 python -m viz.trace_view --inject         # inject a wrong record; the trace points to it
 python -m graphmem.warmup                 # download/cache heavy models
@@ -84,6 +87,13 @@ python -m graphmem.warmup                 # download/cache heavy models
 Each experiment directory gets `calls.jsonl`, `answers.jsonl`, `traces.jsonl`,
 `memory_stats.jsonl`, `decisions.jsonl`, `per_run.csv`, `summary.csv`, `stats.csv`
 (Wilcoxon vs graph) and `plots/`.
+
+The Qwen 3 benchmark compares `full` history with `graph` memory under the same local
+`qwen3:8b` model for every role. It aborts if Ollama is unavailable or a role resolves
+to a different model, so a fallback cannot contaminate the comparison. It reports the
+existing accuracy, token, latency, routing, and trace metrics. For a quick smoke run,
+use `--limit 1 --seeds 42`; use multiple scenarios and seeds for a more stable result.
+This benchmark uses Ollama on your machine and needs no hosted model API key.
 
 ## 3D factory UI
 
