@@ -97,6 +97,16 @@ def build_write_graph(mem):
             "superseded": s.get("superseded"), "notified": notified,
             "compressed": s["comp_meta"].get("compressed", False),
         })
+        d = store.g.nodes[mid]
+        mem.emit("write", {
+            "turn": mem.clock.now, "agent": agent, "event_id": s.get("event_id"), "decision": s["decision"],
+            "memory_id": mid, "target": (s.get("best") or {}).get("id"), "superseded": s.get("superseded"),
+            "notified": notified, "text": d["text"], "original": s["text"], "kind": d["kind"],
+            "tokens": d["tokens"], "orig_tokens": s["comp_meta"].get("orig_tokens"),
+            "keywords": mem.keywords_text(mid), "derived_from": store.out(mid, "derived_from"),
+            "n_writers": d["n_writers"], "stats": mem.store.stats(),
+            "orig_tokens_total": mem.counters["orig_tokens_written"],
+        })
         return {"notified": notified}
 
     g = StateGraph(WriteState)

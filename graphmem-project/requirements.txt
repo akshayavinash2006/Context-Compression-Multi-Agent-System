@@ -22,3 +22,7 @@ pyvis
 apscheduler
 pytest
 tqdm
+# live server for the 3D factory UI
+fastapi
+uvicorn[standard]
+httpx

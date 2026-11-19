@@ -64,11 +64,42 @@ class ModelChain:
             except Exception as e:  # provider down, quota, unsupported feature...
                 errors.append(f"{spec.label}: {type(e).__name__}: {str(e)[:160]}")
                 log.warning("model %s failed for %s: %s", spec.label, self.role, e)
-        raise RuntimeError(f"All models failed for role {self.role}: {errors}")
+        if not self.specs:
+            raise RuntimeError(f"No model available for role '{self.role}'. Skipped: {self.skipped}")
+        raise RuntimeError(f"All models failed for role '{self.role}': {errors}")
 
     @property
     def primary(self) -> str:
-        return self.specs[0].label if self.specs else "none"
+        return self.specs[0].label if self.specs else "UNAVAILABLE"
+
+
+class SeedScopedCache:
+    """Wraps one LLM cache so each experiment seed has its own entries.
+
+    Without this, seeds 42/43/44 would get the identical cached answer and count as
+    three independent samples.
+    """
+
+    def __new__(cls, base, seed):
+        from langchain_core.caches import BaseCache
+
+        class _Scoped(BaseCache):
+            def _key(self, llm_string):
+                return f"seed={seed}|{llm_string}"
+
+            def lookup(self, prompt, llm_string):
+                return base.lookup(prompt, self._key(llm_string))
+
+            def update(self, prompt, llm_string, return_val):
+                base.update(prompt, self._key(llm_string), return_val)
+
+            def clear(self, **kwargs):
+                base.clear(**kwargs)
+
+        return _Scoped()
+
+
+_BASE_CACHE = None          # set by enable_llm_cache(); used per model, scoped by seed
 
 
 _ollama_ok: dict[str, bool] = {}
@@ -108,6 +139,8 @@ def build_llm(provider: str, model: str, cfg, seed: int | None = None):
     kwargs = {"temperature": a.temperature}
     if limiter:
         kwargs["rate_limiter"] = limiter
+    if _BASE_CACHE is not None:
+        kwargs["cache"] = SeedScopedCache(_BASE_CACHE, seed)
     if provider == "ollama":
         kwargs.update(base_url=a.ollama_base_url, num_ctx=a.num_ctx)
         if seed is not None:
@@ -129,6 +162,9 @@ def get_models(cfg, preset: str | None = None, seed: int | None = None) -> dict[
     preset = preset or cfg.agents.preset
     table = cfg.agents.presets[preset]
     fallbacks = [] if preset == "mock" else list(cfg.agents.get("fallbacks") or [])
+    # Real-LLM presets never fall back to the mock: a run with no working model fails loudly
+    # instead of quietly mixing rule-based answers into the results.
+    allow_mock = preset == "mock" or bool(cfg.agents.get("allow_mock_fallback", False))
     chains = {}
     for role in ROLES:
         entries = [table.get(role) or table["default"], *fallbacks]
@@ -136,7 +172,7 @@ def get_models(cfg, preset: str | None = None, seed: int | None = None) -> dict[
         seen = set()
         for n, e in enumerate(entries):
             key = (e["provider"], e.get("model", ""))
-            if key in seen:
+            if key in seen or (e["provider"] == "mock" and not allow_mock):
                 continue
             seen.add(key)
             try:
@@ -146,24 +182,25 @@ def get_models(cfg, preset: str | None = None, seed: int | None = None) -> dict[
                 chain.skipped.append(f"{e['provider']}:{e.get('model', '')} ({err})")
                 if n == 0:
                     chain.primary_skipped = True
-        if not chain.specs:
-            chain.specs.append(ModelSpec("mock", "rule-based", build_llm("mock", "", cfg)))
-            chain.skipped.append("no configured model available; using mock")
-        chains[role] = chain
+        chains[role] = chain          # may have no specs: invoking it raises a clear error
     return chains
 
 
 def enable_llm_cache(cfg, preset: str) -> bool:
-    """SQLite LLM cache so repeated runs are identical and cost no API calls."""
+    """SQLite LLM cache: re-running the same (prompt, model, seed) costs no API call.
+
+    Entries are scoped by seed (SeedScopedCache), so different seeds make their own calls.
+    """
+    global _BASE_CACHE
     path = cfg.runtime.get("llm_cache")
     if not path or preset == "mock":
+        _BASE_CACHE = None
         return False
     try:
         from langchain_community.cache import SQLiteCache
-        from langchain_core.globals import set_llm_cache
         p = resolve_path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        set_llm_cache(SQLiteCache(database_path=str(p)))
+        _BASE_CACHE = SQLiteCache(database_path=str(p))
         return True
     except Exception as e:
         log.warning("LLM cache disabled: %s", e)

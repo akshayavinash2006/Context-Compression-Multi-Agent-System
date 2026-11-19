@@ -52,6 +52,14 @@ def build_read_graph(mem):
     def record_read(s: ReadState):                                 # R4 (delivery part)
         if s.get("record", True):
             mem._record_delivery(s["agent"], s["memory_ids"])
+            top = sorted(s["seeds"].items(), key=lambda kv: -kv[1])[:6]
+            mem.emit("read", {
+                "turn": mem.clock.now, "agent": s["agent"], "query": s["query"], "memory_ids": s["memory_ids"],
+                "tokens_used": s["tokens_used"], "budget": s["budget"], "fallback": s.get("fallback"),
+                "scores": s["scores"], "seeds": [{"id": k, "weight": round(v, 3)} for k, v in top],
+                # what a full-history backend would have sent instead (all messages written so far)
+                "full_history_tokens": mem.counters["orig_tokens_written"],
+            })
         return {}
 
     g = StateGraph(ReadState)

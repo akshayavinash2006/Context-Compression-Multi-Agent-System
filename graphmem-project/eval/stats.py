@@ -10,14 +10,16 @@ METRICS = ["tokens_per_task", "accuracy", "multihop_acc", "unnecessary_context",
 
 
 def compare(df: pd.DataFrame, ours: str = "graph") -> pd.DataFrame:
+    """Pairs are scenarios: each metric is first averaged over seeds, so repeated seeds of the
+    same scenario never count as independent samples."""
     rows = []
-    base = df[df.condition == ours].set_index(["scenario", "seed"])
+    cols = [m for m in METRICS if m in df]
+    per_sc = df.groupby(["condition", "scenario"])[cols].mean().reset_index()
+    base = per_sc[per_sc.condition == ours].set_index("scenario")
     for cond in sorted(set(df.condition) - {ours}):
-        other = df[df.condition == cond].set_index(["scenario", "seed"])
+        other = per_sc[per_sc.condition == cond].set_index("scenario")
         idx = base.index.intersection(other.index)
-        for m in METRICS:
-            if m not in df:
-                continue
+        for m in cols:
             a, b = base.loc[idx, m].astype(float), other.loc[idx, m].astype(float)
             ok = a.notna() & b.notna()
             a, b = a[ok].values, b[ok].values

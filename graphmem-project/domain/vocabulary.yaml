@@ -1,5 +1,6 @@
 # Domain vocabulary for keyword extraction (plan §8.2).
-machine_prefixes: [cnc, vmc, hmc, lathe, press, mill, grinder, robot, edm]
+machine_prefixes: [cnc, vmc, hmc, lathe, press, mill, grinder, robot, edm,
+                   prs, rob, pnt, asm, agv, qc]      # car plant: press, weld robot, paint, assembly, AGV, quality
 
 components: [spindle, spindle bearing, bearing, coolant pump, coolant, servo motor, motor,
              ball screw, belt, drive belt, gearbox, chuck, coupling, fixture, lubrication unit,
