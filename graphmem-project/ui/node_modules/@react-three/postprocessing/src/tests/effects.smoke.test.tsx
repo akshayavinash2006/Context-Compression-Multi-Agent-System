@@ -1,0 +1,229 @@
+// Mounts/unmounts every effect and checks dispose() runs once. WebGL is a no-op
+// proxy here, so shaders are never verified. The last test fails if a file in
+// src/effects or src/passes is missing from SMOKE_CASES/EXCLUDED.
+
+/// <reference types="node" />
+
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { DepthPickingPass as DepthPickingPassImpl, EffectComposer as EffectComposerImpl } from 'postprocessing'
+import * as React from 'react'
+import * as THREE from 'three'
+import { describe, expect, it, vi } from 'vitest'
+import { EffectComposer } from '../EffectComposer'
+import { Autofocus, type AutofocusApi } from '../effects/Autofocus'
+import { Bloom } from '../effects/Bloom'
+import { BrightnessContrast } from '../effects/BrightnessContrast'
+import { ChromaticAberration } from '../effects/ChromaticAberration'
+import { ColorAverage } from '../effects/ColorAverage'
+import { ColorDepth } from '../effects/ColorDepth'
+import { Depth } from '../effects/Depth'
+import { DepthOfField } from '../effects/DepthOfField'
+import { DotScreen } from '../effects/DotScreen'
+import { FXAA } from '../effects/FXAA'
+import { Glitch } from '../effects/Glitch'
+import { GodRays } from '../effects/GodRays'
+import { Grid } from '../effects/Grid'
+import { Halftone } from '../effects/Halftone'
+import { HueSaturation } from '../effects/HueSaturation'
+import { Kuwahara } from '../effects/Kuwahara'
+import { LensDistortion } from '../effects/LensDistortion'
+import { LensFlare } from '../effects/LensFlare'
+import { Linocut } from '../effects/Linocut'
+import { LUT } from '../effects/LUT'
+import { Noise } from '../effects/Noise'
+import { Outline } from '../effects/Outline'
+import { Pixelation } from '../effects/Pixelation'
+import { Ramp } from '../effects/Ramp'
+import { Scanline } from '../effects/ScanlineEffect'
+import { SelectiveBloom } from '../effects/SelectiveBloom'
+import { Sepia } from '../effects/Sepia'
+import { Sharpness } from '../effects/Sharpness'
+import { ShockWave } from '../effects/ShockWave'
+import { SMAA } from '../effects/SMAA'
+import { SSAO } from '../effects/SSAO'
+import { Texture } from '../effects/Texture'
+import { TiltShift } from '../effects/TiltShift'
+import { TiltShift2 } from '../effects/TiltShift2'
+import { ToneMapping } from '../effects/ToneMapping'
+import { Vignette } from '../effects/Vignette'
+import { WaterEffect } from '../effects/Water'
+import { DepthPicking } from '../passes/DepthPicking'
+import { N8AO } from '../passes/N8AO'
+import { flush, root } from './test-utils'
+
+type SmokeCase = {
+  /** Filename under src/effects or src/passes this case covers — drives the coverage check below. */
+  file: string
+  label: string
+  composerProps?: Record<string, unknown>
+  /** Extra scene content the effect needs (e.g. a sun mesh for GodRays). */
+  extras?: React.ReactNode
+  /** Renders the effect element. */
+  effect: (ref: React.Ref<any>) => React.ReactElement
+}
+
+const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8))
+const lutTexture = new THREE.DataTexture(new Uint8Array(4 * 4 * 4 * 4), 4, 4)
+
+const SMOKE_CASES: SmokeCase[] = [
+  { file: 'Autofocus.tsx', label: 'Autofocus', effect: (ref) => <Autofocus ref={ref} /> },
+  { file: 'Bloom.tsx', label: 'Bloom', effect: (ref) => <Bloom ref={ref} /> },
+  { file: 'BrightnessContrast.tsx', label: 'BrightnessContrast', effect: (ref) => <BrightnessContrast ref={ref} /> },
+  { file: 'ChromaticAberration.tsx', label: 'ChromaticAberration', effect: (ref) => <ChromaticAberration ref={ref} /> },
+  { file: 'ColorAverage.tsx', label: 'ColorAverage', effect: (ref) => <ColorAverage ref={ref} /> },
+  { file: 'ColorDepth.tsx', label: 'ColorDepth', effect: (ref) => <ColorDepth ref={ref} /> },
+  { file: 'Depth.tsx', label: 'Depth', effect: (ref) => <Depth ref={ref} /> },
+  { file: 'DepthOfField.tsx', label: 'DepthOfField', effect: (ref) => <DepthOfField ref={ref} /> },
+  { file: 'DepthPicking.tsx', label: 'DepthPicking', effect: (ref) => <DepthPicking ref={ref} /> },
+  { file: 'DotScreen.tsx', label: 'DotScreen', effect: (ref) => <DotScreen ref={ref} /> },
+  { file: 'FXAA.tsx', label: 'FXAA', effect: (ref) => <FXAA ref={ref} /> },
+  { file: 'Glitch.tsx', label: 'Glitch', effect: (ref) => <Glitch ref={ref} /> },
+  {
+    file: 'GodRays.tsx',
+    label: 'GodRays',
+    extras: <primitive object={sunMesh} />,
+    effect: (ref) => <GodRays ref={ref} sun={sunMesh} />,
+  },
+  { file: 'Grid.tsx', label: 'Grid', effect: (ref) => <Grid ref={ref} /> },
+  { file: 'Halftone.tsx', label: 'Halftone', effect: (ref) => <Halftone ref={ref} /> },
+  { file: 'HueSaturation.tsx', label: 'HueSaturation', effect: (ref) => <HueSaturation ref={ref} /> },
+  { file: 'Kuwahara.tsx', label: 'Kuwahara', effect: (ref) => <Kuwahara ref={ref} /> },
+  { file: 'LensDistortion.tsx', label: 'LensDistortion', effect: (ref) => <LensDistortion ref={ref} /> },
+  { file: 'LensFlare.tsx', label: 'LensFlare', effect: (ref) => <LensFlare ref={ref} /> },
+  { file: 'Linocut.tsx', label: 'Linocut', effect: (ref) => <Linocut ref={ref} /> },
+  { file: 'LUT.tsx', label: 'LUT', effect: (ref) => <LUT ref={ref} lut={lutTexture} /> },
+  { file: 'N8AO.tsx', label: 'N8AO', effect: (ref) => <N8AO ref={ref} /> },
+  { file: 'Noise.tsx', label: 'Noise', effect: (ref) => <Noise ref={ref} /> },
+  { file: 'Outline.tsx', label: 'Outline', effect: (ref) => <Outline ref={ref} /> },
+  { file: 'Pixelation.tsx', label: 'Pixelation', effect: (ref) => <Pixelation ref={ref} /> },
+  { file: 'Ramp.tsx', label: 'Ramp', effect: (ref) => <Ramp ref={ref} /> },
+  { file: 'ScanlineEffect.tsx', label: 'Scanline', effect: (ref) => <Scanline ref={ref} /> },
+  {
+    file: 'SelectiveBloom.tsx',
+    label: 'SelectiveBloom',
+    effect: (ref) => <SelectiveBloom ref={ref} lights={[]} />,
+  },
+  { file: 'Sepia.tsx', label: 'Sepia', effect: (ref) => <Sepia ref={ref} /> },
+  { file: 'Sharpness.tsx', label: 'Sharpness', effect: (ref) => <Sharpness ref={ref} /> },
+  { file: 'ShockWave.tsx', label: 'ShockWave', effect: (ref) => <ShockWave ref={ref} /> },
+  { file: 'SMAA.tsx', label: 'SMAA', effect: (ref) => <SMAA ref={ref} /> },
+  {
+    file: 'SSAO.tsx',
+    label: 'SSAO (without normal pass — sentinel path)',
+    effect: (ref) => <SSAO ref={ref} />,
+  },
+  {
+    file: 'SSAO.tsx',
+    label: 'SSAO (with normal pass — real construction path)',
+    composerProps: { enableNormalPass: true },
+    effect: (ref) => <SSAO ref={ref} />,
+  },
+  {
+    file: 'Texture.tsx',
+    label: 'Texture (with a passed texture)',
+    effect: (ref) => <Texture ref={ref} texture={new THREE.Texture()} />,
+  },
+  { file: 'TiltShift.tsx', label: 'TiltShift', effect: (ref) => <TiltShift ref={ref} /> },
+  { file: 'TiltShift2.tsx', label: 'TiltShift2', effect: (ref) => <TiltShift2 ref={ref} /> },
+  { file: 'ToneMapping.tsx', label: 'ToneMapping', effect: (ref) => <ToneMapping ref={ref} /> },
+  { file: 'Vignette.tsx', label: 'Vignette', effect: (ref) => <Vignette ref={ref} /> },
+  { file: 'Water.tsx', label: 'WaterEffect', effect: (ref) => <WaterEffect ref={ref} /> },
+]
+
+const EXCLUDED: Record<string, string> = {
+  'ASCII.tsx':
+    "constructs its character atlas via document.createElement('canvas') — this project's vitest config runs the node test environment (no jsdom/document). Verify manually.",
+}
+
+describe('effect smoke tests', () => {
+  it.each(SMOKE_CASES)('$label mounts and unmounts without throwing', async ({ composerProps, extras, effect }) => {
+    const ref = React.createRef<any>()
+    const composerRef = React.createRef<EffectComposerImpl>()
+
+    await React.act(async () =>
+      root.render(
+        <EffectComposer ref={composerRef} {...composerProps}>
+          {extras}
+          {effect(ref)}
+        </EffectComposer>
+      )
+    )
+
+    await flush()
+
+    const instance = ref.current
+    const disposeSpy = instance && typeof instance.dispose === 'function' ? vi.spyOn(instance, 'dispose') : null
+
+    await React.act(async () => root.render(null))
+    await flush()
+
+    if (disposeSpy) {
+      expect(disposeSpy).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  // Autofocus's ref is an AutofocusApi, not an effect, so the generic dispose check skips it
+  it('Autofocus disposes the nested DepthPicking and DepthOfField effect', async () => {
+    const depthPickingDisposeSpy = vi.spyOn(DepthPickingPassImpl.prototype, 'dispose')
+    const ref = React.createRef<AutofocusApi>()
+
+    await React.act(async () =>
+      root.render(
+        <EffectComposer>
+          <Autofocus ref={ref} />
+        </EffectComposer>
+      )
+    )
+
+    await flush()
+
+    const dofEffect = ref.current!.dofRef.current
+    expect(dofEffect).toBeTruthy()
+    const dofDisposeSpy = vi.spyOn(dofEffect!, 'dispose')
+
+    await React.act(async () => root.render(null))
+    await flush()
+
+    expect(depthPickingDisposeSpy).toHaveBeenCalled()
+    expect(dofDisposeSpy).toHaveBeenCalled()
+
+    depthPickingDisposeSpy.mockRestore()
+  })
+
+  it('DepthPicking disposes its pass on unmount', async () => {
+    const disposeSpy = vi.spyOn(DepthPickingPassImpl.prototype, 'dispose')
+    const ref = React.createRef<import('../passes/DepthPicking').DepthPickingApi>()
+
+    await React.act(async () =>
+      root.render(
+        <EffectComposer>
+          <DepthPicking ref={ref} />
+        </EffectComposer>
+      )
+    )
+
+    await flush()
+    expect(ref.current).toBeTruthy()
+
+    await React.act(async () => root.render(null))
+    await flush()
+
+    expect(disposeSpy).toHaveBeenCalled()
+
+    disposeSpy.mockRestore()
+  })
+
+  it('covers every file in src/effects and src/passes (or documents why it is excluded)', () => {
+    const srcDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+    const files = ['effects', 'passes'].flatMap((dir) =>
+      fs.readdirSync(path.join(srcDir, dir)).filter((f) => f.endsWith('.tsx'))
+    )
+
+    const covered = new Set(SMOKE_CASES.map((c) => c.file))
+    const missing = files.filter((f) => !covered.has(f) && !(f in EXCLUDED))
+
+    expect(missing).toEqual([])
+  })
+})

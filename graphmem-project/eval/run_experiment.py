@@ -165,9 +165,10 @@ def main(argv=None):
         {s["scenario_id"]: s for s in scenarios}), encoding="utf-8")
     if not args.no_report:
         from eval.metrics import compute_all
-        from eval.plots import make_plots
+        from eval.plots import make_plots, write_latency_report
         table = compute_all(out)
         make_plots(out)
+        write_latency_report(out)
         print(table.to_string())
         print(f"\nresults in {out}")
 
