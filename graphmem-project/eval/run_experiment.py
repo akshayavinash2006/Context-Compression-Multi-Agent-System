@@ -178,9 +178,10 @@ def main(argv=None):
         print(f"\nWARNING: {failed}/{total} runs failed and are excluded (see {out / 'failures.jsonl'}).")
     if not args.no_report and failed < total:
         from eval.metrics import compute_all
-        from eval.plots import make_plots
+        from eval.plots import make_plots, write_latency_report
         table = compute_all(out)
         make_plots(out)
+        write_latency_report(out)
         print(table.to_string())
         import pandas as pd
         per_run = pd.read_csv(out / "per_run.csv")
